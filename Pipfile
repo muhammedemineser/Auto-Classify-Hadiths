@@ -5,6 +5,12 @@ name = "pypi"
 
 [packages]
 ipython = "*"
+stanza = "*"
+arabic-reshaper = "*"
+python-bidi = "*"
+transformers = "*"
+torch = "*"
+arabert = "*"
 
 [dev-packages]
 ipykernel = "*"
