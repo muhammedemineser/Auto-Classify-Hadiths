@@ -11,6 +11,7 @@ python-bidi = "*"
 transformers = "*"
 torch = "*"
 arabert = "*"
+regex = "*"
 
 [dev-packages]
 ipykernel = "*"

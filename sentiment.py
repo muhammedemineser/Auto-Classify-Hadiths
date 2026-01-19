@@ -12,7 +12,7 @@ def d(text):
         return text
     return get_display(reshape(text))
 
-print("Lade Modell... (bitte warten)")
+print("Load Model... (please wait)")
 classifier = pipeline("zero-shot-classification", model="MoritzLaurer/mDeBERTa-v3-base-mnli-xnli")
 
 def analyze_rijal_stable(text):
