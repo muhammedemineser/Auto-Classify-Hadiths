@@ -132,10 +132,16 @@ from arabic_reshaper import reshape
 from bidi.algorithm import get_display
 from normalize import normalize_arabic
 
+
 def d(text):
     print(get_display(reshape(text)))
 
-with open("/home/muhammed/apps/Auto-Classify-Hadiths/Tafsir/tafsir_books/x.rtl.txt","r",encoding="UTF-8") as f:
+
+with open(
+    "/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books/x.rtl.txt",
+    "r",
+    encoding="UTF-8",
+) as f:
     text = f.read()
 
     text = normalize_arabic(text)

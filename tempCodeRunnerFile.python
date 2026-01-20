@@ -1,0 +1,123 @@
+import regex
+from sqlalchemy import create_engine, text
+
+# 1. KONFIGURATION
+db_name = "tafsir_database"
+engine_out = create_engine(f"sqlite:///GPT_seperator_for_{db_name}.db")
+
+# 2. DEFINITION ALLER MÖGLICHEN TAGS (Spaltennamen)
+ALL_TAGS = [
+    "isnad", "matn", "quran_verse", "asbab_al_nuzul", "linguistic_analysis", "qiraat",
+    "cross_references", "hadith_support", "opinions_of_scholars", "fiqh_implications",
+    "theological_points", "historical_context", "explanation", "source",
+    "balagha_analysis", "nasikh_wa_mansukh", "grammatical_parsing", "etymology",
+    "parabolic_meaning", "sectarian_perspective", "spiritual_lessons",
+    "biographies_of_narrators", "ijma_status", "reason_for_revelation_variants",
+    "legal_maxims", "maqasid_al_sharia", "variant_interpretations", "minority_opinions",
+    "majority_opinions", "literal_interpretation", "metaphorical_interpretation",
+    "contextual_scope", "general_vs_specific", "absolute_vs_restricted",
+    "command_and_prohibition", "rhetorical_devices", "semantic_fields",
+    "synonym_analysis_homonym_antonym_analysis", "chronological_order", "meccan_medinan",
+    "intertextual_links", "israiliyyat", "philosophical_reflections", "ethical_implications",
+    "creedal_implications", "aqidah_classification", "scientific_allusions",
+    "cosmological_notes", "social_norms", "political_implications",
+    "pedagogical_lessons", "daawah_applications", "practical_guidance",
+    "ritual_implications", "disputed_terms", "technical_definitions",
+    "textual_variants", "manuscript_evidence", "chain_evaluation", "narrator_criticism",
+    "comparative_tafsir", "methodological_notes", "argument", "summary", "conclusion"
+]
+
+# 3. REKURSIVE REGEX
+RX_RECURSIVE = regex.compile(
+    r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*?)</(?P=tag)>"
+)
+
+# 4. FUNKTIONEN
+def extract_nested_data(text_input):
+    """Extrahiert Tags rekursiv und füllt fehlende Spalten mit None auf."""
+    # Jedes Dict muss alle Keys haben, damit der Bulk-Insert (executemany) nicht scheitert
+    row_data = {tag: None for tag in ALL_TAGS}
+    
+    if not text_input:
+        return row_data
+
+    matches = RX_RECURSIVE.finditer(text_input)
+    for match in matches:
+        tag = match.group("tag")
+        full_element = match.group(0) # Inklusive Tags speichern
+        
+        if row_data.get(tag) is not None:
+            row_data[tag] += f"\n{full_element}"
+        else:
+            row_data[tag] = full_element
+            
+    return row_data
+
+def bulk_insert_tafsir(engine, raw_texts_list):
+    """Verarbeitet Texte und führt einen effizienten Bulk-Insert aus."""
+    # Daten vorbereiten
+    data_to_insert = [extract_nested_data(t) for t in raw_texts_list if t]
+
+    if not data_to_insert:
+        print("Keine Daten zum Einfügen gefunden.")
+        return
+
+    # Dynamisches SQL Statement basierend auf ALL_TAGS
+    col_names = ", ".join(ALL_TAGS)
+    placeholders = ", ".join([f":{col}" for col in ALL_TAGS])
+    stmt = text(f"INSERT INTO tafsir_analysis ({col_names}) VALUES ({placeholders})")
+
+    # Ausführung
+    with engine.connect() as connection:
+        with connection.begin():
+            connection.execute(stmt, data_to_insert)
+    
+    print(f"Erfolg: {len(data_to_insert)} Datensätze eingefügt.")
+
+def setup_database():
+    """Erstellt die Tabelle, falls sie nicht existiert."""
+    columns_sql = ", ".join([f"{tag} TEXT" for tag in ALL_TAGS])
+    sql_create_table = f"""
+    CREATE TABLE IF NOT EXISTS tafsir_analysis (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        {columns_sql},
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    with engine_out.connect() as conn:
+        conn.execute(text(sql_create_table))
+        conn.commit()
+
+# 5. MOCKUP DATEN & TESTLAUF
+if __name__ == "__main__":
+    # Tabellen-Setup
+    setup_database()
+
+    # Mock-Daten (unterschiedliche Tags pro Text)
+    mock_raw_texts = [
+        """
+        <quran_verse>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</quran_verse>
+        <explanation>
+            Die Basmala eingeleitet durch:
+            <source>Tafsir al-Jalalayn</source>
+            <linguistic_analysis>
+                Das Wort <etymology>Allah</etymology> stammt von ilāh.
+                <grammatical_parsing>Genitiv durch die Präposition bi-</grammatical_parsing>
+            </linguistic_analysis>
+            <theological_points>Einheit Gottes (Tawhid).</theological_points>
+        </explanation>
+        <hadith_support>
+            <isnad>Überliefert von Abu Huraira...</isnad>
+            <matn>Jede wichtige Tat, die nicht mit der Basmala beginnt, ist unvollständig.</matn>
+        </hadith_support>
+        <summary>Ein essenzieller Vers für jeden Beginn.</summary>
+        """,
+        """
+        <quran_verse>الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ</quran_verse>
+        <explanation>Lobpreis gebührt Allah allein.</explanation>
+        <conclusion>Dankbarkeit ist der Kern des Glaubens.</conclusion>
+        """
+    ]
+
+    # Ausführung
+    bulk_insert_tafsir(engine_out, mock_raw_texts)
