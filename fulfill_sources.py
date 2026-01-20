@@ -6,14 +6,14 @@ import pyperclip
 import regex
 from bs4 import BeautifulSoup
 from sqlalchemy import MetaData, Table, create_engine, select, text
+from ocr import OCRWatcher
 
 
 PRIMARY_TAGS = {
-    "isnad": "Die Übertragungskette von Gewährspersonen, die zu einer Aussage (Hadith oder Gelehrtenmeinung) führt.",
+    "isnad": "Die Übertragungskette von Personen, die zur eigentlichen Aussage (Hadith Matn) führt.",
     "matn": "Der eigentliche Wortlaut oder Haupttext einer überlieferten Aussage (Hadith), abzüglich der Übertragungskette.",
-    "source": "Die explizite Nennung eines Werkes, Autors oder Primärquellen-Gebers (z. B. 'Überliefert bei Buchari' oder 'Sagt Ibn Kathir').",
+    "source": "Die explizite Nennung eines Werkes bzw. Primärquellen-Gebers (z. B. 'Überliefert bei Buchari').",
     "quran_verse": "Direktes Zitat aus dem Koran im arabischen Originalwortlaut.",
-    "opinions_of_scholars": "Zusammenfassung oder direktes Zitat von Deutungen klassischer Exegeten (Tafsir-Gelehrte).",
 }
 
 SECONDARY_TAGS = {
@@ -22,7 +22,7 @@ SECONDARY_TAGS = {
     "narrator_criticism": "Detaillierte Analyse oder Kritik einzelner Personen innerhalb einer Übertragungskette (Ilm al-Rijal).",
     "asbab_al_nuzul": "Berichte über den spezifischen historischen Anlass oder den Kontext der Offenbarung eines Verses.",
     "hadith_support": "Einbeziehung prophetischer Überlieferungen zur Untermauerung der Exegese.",
-    "explanation": "Allgemeiner erläuternder Kommentar des Autors zum Verständnis des Textes.",
+    "opinions_of_scholars": "Zusammenfassung oder direktes Zitat von Deutungen klassischer Exegeten (Tafsir-Gelehrte).",
 }
 
 REMAINING_ALL_TAGS = {
@@ -94,9 +94,22 @@ RX_RECURSIVE = regex.compile(
     r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*)</(?P=tag)>"
 )
 
+watcher_a = OCRWatcher(17, 146, 712, 842)
+watcher_b = OCRWatcher(38, 2, 83, 35)
+
+
+def cleanup_cycle(extracted_text: str):
+    """Hard-refresh the page and reset devtools/clipboard to keep the browser snappy."""
+    pyautogui.hotkey("ctrl", "shift", "r")
+    watcher_window_reload = watcher_b.run()
+    if watcher_window_reload is True:
+        extracted_text = get_code_from_devtools()
+        print("Antwort gespeichert. Nächster Durchgang...")
+    pyperclip.copy("")  # free clipboard buffer
+    time.sleep(0.5)
+
 
 def get_code_from_devtools():
-    pyautogui.hotkey("ctrl", "shift", "i")
     time.sleep(2)
 
     pyautogui.hotkey("ctrl", "f")
@@ -106,9 +119,11 @@ def get_code_from_devtools():
     search_term = "code-container formatted ng-tns-"
     pyperclip.copy(search_term)
     pyautogui.hotkey("ctrl", "v")
-    pyautogui.click(x=1396, y=1000)
     time.sleep(2)
-    pyautogui.click(x=814, y=124)
+    pyautogui.moveTo(x=1396, y=1000)
+    pyautogui.click()
+    pyautogui.moveTo(x=814, y=124)
+    pyautogui.click()
     time.sleep(1)
     pyautogui.hotkey("ctrl", "c")
     time.sleep(1.2)
@@ -148,15 +163,16 @@ def extract_nested_data(xml):
 
 
 def setup_analysis_table(engine_out, table_name):
-    cols_sql = ", ".join(f"{c} TEXT" for c in ALL_COLUMNS)
-    sql = f"""
-    CREATE TABLE IF NOT EXISTS {table_name} (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        {cols_sql},
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """
     with engine_out.begin() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        cols_sql = ", ".join(f"{c} TEXT" for c in ALL_COLUMNS)
+        sql = f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            {cols_sql},
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
         conn.execute(text(sql))
 
 
@@ -211,6 +227,7 @@ DBS = ["katheer", "waseet", "tabary", "sa3dy", "qortoby", "baghawy"]
 
 
 def automate_gemini(db):
+    i = 0
     db_path_in = (
         f"/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books/{db}.sqlite3"
     )
@@ -230,8 +247,11 @@ def automate_gemini(db):
         max_workers=4
     ) as executor:
         results = connection.execute(select(tafsir_table.c.text))
+        batch = []
 
         for row in results:
+            i += 1
+            extracted_text = None
             original_text = row[0]
             if not original_text:
                 continue
@@ -243,26 +263,53 @@ def automate_gemini(db):
             # ChatGPT
             # pyautogui.click(x=597, y=933)
             # Gemini
+            time.sleep(1.5)
             pyautogui.click(x=711, y=879)
+            time.sleep(0.5)
+            pyautogui.click(x=666, y=891)
+            time.sleep(0.5)
+            pyautogui.click(x=666, y=891)
+            time.sleep(0.3)
             pyautogui.hotkey("ctrl", "a")
+            time.sleep(0.5)
             pyautogui.press("backspace")
             pyautogui.hotkey("ctrl", "v")
             time.sleep(1.5)
             pyautogui.press("enter")
-
+            time.sleep(0.5)
             print("Warte auf Antwort von Gemini...")
-            time.sleep(60)
+            pyautogui.hotkey("ctrl", "shift", "i")
+            time.sleep(1.5)
 
-            extracted_text = get_code_from_devtools()
+            watcher_gemini_response = watcher_a.run()
+            if watcher_gemini_response is True:
+                extracted_text = get_code_from_devtools()
+                if i % 5 == 0:
+                    cleanup_cycle(extracted_text)
 
             if not extracted_text:
                 print("Kein Code gefunden.")
                 break
 
-            executor.submit(
-                bulk_insert_tafsir, engine_out, target_table, [extracted_text]
-            )
+            batch.append(extracted_text)
+            if i % 5 == 0 and batch:
+                executor.submit(
+                    bulk_insert_tafsir,
+                    engine_out,
+                    target_table,
+                    list(batch),
+                )
+                batch.clear()
+                cleanup_cycle()
             print("Antwort gespeichert. Nächster Durchgang...")
+
+        if batch:
+            executor.submit(
+                bulk_insert_tafsir,
+                engine_out,
+                target_table,
+                list(batch),
+            )
 
 
 if __name__ == "__main__":

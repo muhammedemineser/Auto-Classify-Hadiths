@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="transform.xsl"?>
+<tafsir_section>
+
+    <opinions_of_scholars>
+        <isnad>قال            <source>العوفي</source> ، عن            <source>ابن عباس</source> :
+        </isnad>
+        <source>قوله تعالى :</source>
+        <quran_verse>( وإذ جعلنا البيت مثابة للناس )</quran_verse>
+        <matn>
+            <linguistic_analysis>
+                يقول : لا يقضون منه وطرا ، يأتونه ، ثم يرجعون إلى أهليهم ، ثم يعودون إليه .
+            </linguistic_analysis>
+        </matn>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <isnad>وقال            <source>علي بن أبي طلحة</source> ، عن            <source>ابن عباس</source> :
+        </isnad>
+        <matn>
+            <linguistic_analysis>
+                <quran_verse>( مثابة للناس )</quran_verse> يقول : يثوبون .
+            </linguistic_analysis>
+        </matn>
+        <methodological_notes>
+            <source>رواهما ابن جرير</source>.
+        </methodological_notes>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <source>وقال ابن أبي حاتم :</source>
+        <isnad>
+            أخبرنا أبي ، أخبرنا عبد الله بن رجاء ، أخبرنا إسرائيل ، عن مسلم ، عن مجاهد ، عن ابن عباس
+        </isnad>
+        <quran_verse>( وإذ جعلنا البيت مثابة للناس )</quran_verse>
+        <matn>
+            <linguistic_analysis>قال : يثوبون إليه ثم يرجعون .</linguistic_analysis>
+        </matn>
+        <methodological_notes>
+            قال : وروي عن            <source>أبي العالية</source> ، و            <source>سعيد بن جبير</source> في رواية ، و            <source>عطاء</source> ، و            <source>مجاهد</source> ، و            <source>الحسن</source> ، و            <source>عطية</source> ، و            <source>الربيع بن أنس</source> ، و            <source>الضحاك</source> نحو ذلك .
+        </methodological_notes>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <source>وقال ابن جرير :</source>
+        <isnad>
+            حدثني عبد الكريم بن أبي عمير ، حدثني الوليد بن مسلم قال : قال أبو عمرو يعني الأوزاعي حدثني عبدة بن أبي لبابة
+        </isnad>
+        <quran_verse>( وإذ جعلنا البيت مثابة للناس )</quran_verse>
+        <matn>
+            <linguistic_analysis>
+                قال : لا ينصرف عنه منصرف وهو يرى أنه قد قضى منه وطرا .
+            </linguistic_analysis>
+        </matn>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <isnad>وحدثني يونس ، عن ابن وهب ، قال : قال ابن زيد :</isnad>
+        <matn>
+            <quran_verse>( وإذ جعلنا البيت مثابة للناس )</quran_verse>
+            <linguistic_analysis>قال : يثوبون إليه من البلدان كلها ويأتونه .</linguistic_analysis>
+        </matn>
+    </opinions_of_scholars>
+
+    <intertextual_links>
+        [ وما أحسن ما قال الشاعر في هذا المعنى ،        <source>أورده القرطبي :</source>
+        جعل البيت مثابا لهم ليس منه الدهر يقضون الوطر ]
+    </intertextual_links>
+
+    <opinions_of_scholars>
+        <source>وقال سعيد بن جبير في الرواية الأخرى وعكرمة ، وقتادة ، وعطاء الخراساني</source>
+        <matn>
+            <linguistic_analysis>
+                <quran_verse>( مثابة للناس )</quran_verse> أي : مجمعا .
+            </linguistic_analysis>
+        </matn>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <quran_verse>( وأمنا )</quran_verse>
+        <source>قال الضحاك عن ابن عباس :</source>
+        <matn>
+            <linguistic_analysis>أي أمنا للناس .</linguistic_analysis>
+        </matn>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        <source>وقال أبو جعفر الرازي</source> ،
+        <isnad>عن الربيع بن أنس ، عن أبي العالية :</isnad>
+        <matn>
+            <quran_verse>( وإذ جعلنا البيت مثابة للناس وأمنا )</quran_verse>
+            <linguistic_analysis>يقول : أمنا من العدو ، وأن يحمل فيه السلاح</linguistic_analysis>
+            <historical_context>
+                وقد كانوا في الجاهلية يتخطف الناس من حولهم ، وهم آمنون لا يسبون .
+            </historical_context>
+        </matn>
+    </opinions_of_scholars>
+
+    <opinions_of_scholars>
+        وروي عن        <source>مجاهد ، وعطاء ، والسدي ، وقتادة ، والربيع بن أنس</source> ، قالوا :
+        <matn>
+            <fiqh_implications>من دخله كان آمنا .</fiqh_implications>
+        </matn>
+    </opinions_of_scholars>
+
+    <summary>
+        <conclusion>
+            مضمون ما فسر به هؤلاء الأئمة هذه الآية أن الله تعالى يذكر شرف البيت وما جعله موصوفا به شرعا وقدرا من كونه مثابة للناس …
+        </conclusion>
+    </summary>
+
+</tafsir_section>
