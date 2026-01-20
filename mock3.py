@@ -7,7 +7,7 @@ engine_out = create_engine(f"sqlite:///GPT_seperator_for_{db_name}.db")
 
 ALL_TAGS = [
     "isnad",
-    "matn",
+    "hadith",
     "quran_verse",
     "asbab_al_nuzul",
     "linguistic_analysis",

@@ -21,6 +21,7 @@ opencv-python = "*"
 beautifulsoup4 = "*"
 easyocr = "*"
 mss = "*"
+fastapi = "*"
 
 [dev-packages]
 ipykernel = "*"

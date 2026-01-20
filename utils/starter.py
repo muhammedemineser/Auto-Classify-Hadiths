@@ -42,10 +42,10 @@ for book in books:
         "Hadith_number",
         "English_Hadith",
         "English_Isnad",
-        "English_Matn",
+        "English_hadith",
         "Arabic_Hadith",
         "Arabic_Isnad",
-        "Arabic_Matn",
+        "Arabic_hadith",
         "Arabic_Comment",
         "English_Grade",
         "Arabic_Grade",
@@ -93,11 +93,11 @@ for book in books:
 
     #     En_hadith = data.English_Hadith.tolist()
     #     En_Isnad = data.English_Isnad.tolist()
-    #     En_Matn = data.English_Matn.tolist()
+    #     En_hadith = data.English_hadith.tolist()
 
     #     Ar_Hadith = data.Arabic_Hadith.tolist()
     #     Ar_Isnad = data.Arabic_Isnad.tolist()
-    #     Ar_Matn = data.Arabic_Matn.tolist()
+    #     Ar_hadith = data.Arabic_hadith.tolist()
 
     #     Ar_Comment = data.Arabic_Comment.tolist()
     #     En_Grade = data.English_Grade.tolist()
@@ -125,7 +125,7 @@ for book in books:
     #             """
     #             )
 
-    #         for i, hadith in enumerate(En_Matn):
+    #         for i, hadith in enumerate(En_hadith):
     #             cursor.execute(
     #                 """
     #                 INSERT INTO Hadith
@@ -138,7 +138,7 @@ for book in books:
     #                     En_Grade[i],
     #                 ),
     #             )
-    #         for i, hadith in enumerate(Ar_Matn):
+    #         for i, hadith in enumerate(Ar_hadith):
     #             cursor.execute(
     #                 """
     #                 UPDATE Hadith

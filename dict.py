@@ -1,4 +1,3 @@
-
 SOURCE_SAYING_FORMS = [
     "قال",
     "ذكر",
@@ -187,10 +186,10 @@ RX_ISNAD = regex.compile(
 
 
 # =========================
-# 3) MATN PREFIX (deine Basis; Variationen via Regex)
+# 3) hadith PREFIX (deine Basis; Variationen via Regex)
 # =========================
 
-MATN_BASE = [
+hadith_BASE = [
     "قال رسول الله",
     "قال النبي",
     "قال نبي الله",
@@ -237,7 +236,7 @@ MATN_BASE = [
 ]
 
 # Regex: deckt alle Varianten (صلوات + صفات + punctuation + optional "قال/يقول")
-RX_MATN_PREFIX = regex.compile(
+RX_hadith_PREFIX = regex.compile(
     r"""
     (?xiu)
     (?:
@@ -266,10 +265,10 @@ RX_MATN_PREFIX = regex.compile(
 
 
 # =========================
-# 4) POST-MATN (تصحيح/تضعيف/تخريج/عزو… بعد المتن)
+# 4) POST-hadith (تصحيح/تضعيف/تخريج/عزو… بعد المتن)
 # =========================
 
-POST_MATN_MARKERS = [
+POST_hadith_MARKERS = [
     "رواه",
     "رُوي",
     "أخرجه",
@@ -308,9 +307,9 @@ POST_MATN_MARKERS = [
     "والله أعلم",
 ]
 
-# RX_POST_MATN = regex.compile(
+# RX_POST_hadith = regex.compile(
 #     r"(?xiu)(?:%s)"
-#     % "|".join(sorted(map(regex.escape, POST_MATN_MARKERS), key=len, reverse=True))
+#     % "|".join(sorted(map(regex.escape, POST_hadith_MARKERS), key=len, reverse=True))
 # )
 
 # out = [add_definite_article(t) for t in tokens if t.pos == "NOUN"]

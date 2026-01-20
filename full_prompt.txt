@@ -6,9 +6,9 @@ INSTRUKTIONEN:
 2. Kennzeichne JEDEN Bestandteil ausschließlich mit den Elementen aus der folgenden Variable:
 
 "Kategorie der 'Null-Toleranz'. Diese Elemente bilden das Skelett jeder Exegese. Eine Fehlklassifizierung oder das Auslassen bei eindeutigem Vorkommen gilt als struktureller Fehler."
-"Erzwinge höchste Präzision. Jeder Korantext MUSS als <quran_verse> markiert sein. Jede Namenskette MUSS als <isnad> gekennzeichnet werden. Jede namentliche Nennung eines Werkes, Autors oder Primärquellen-Gebers MUSS als <source> identifiziert werden. Jede direkte oder indirekte Deutung klassischer Exegeten MUSS <opinions_of_scholars> umschließen. Der eigentliche inhaltliche Wortlaut einer Überlieferung abzüglich der Kette MUSS als <matn> definiert werden."
-    "isnad": "Die Übertragungskette von Personen, die zur eigentlichen Aussage (Hadith Matn) führt.",
-    "matn": "Der eigentliche Wortlaut oder Haupttext einer überlieferten Aussage (Hadith), abzüglich der Übertragungskette.",
+"Erzwinge höchste Präzision. Jeder Korantext MUSS als <quran_verse> markiert sein. Jede Namenskette MUSS als <isnad> gekennzeichnet werden. Jede namentliche Nennung eines Werkes, Autors oder Primärquellen-Gebers MUSS als <source> identifiziert werden. Jede direkte oder indirekte Deutung klassischer Exegeten MUSS <opinions_of_scholars> umschließen. Der eigentliche inhaltliche Wortlaut einer Überlieferung abzüglich der Kette MUSS als <hadith> definiert werden."
+    "isnad": "Die Übertragungskette von Personen, die zur eigentlichen Aussage (Hadith hadith) führt.",
+    "hadith": "Der eigentliche Wortlaut oder Haupttext einer überlieferten Aussage (Hadith), abzüglich der Übertragungskette.",
     "source": "Die explizite Nennung eines Werkes bzw. Primärquellen-Gebers (z. B. 'Überliefert bei Buchari').",
     "quran_verse": "Direktes Zitat aus dem Koran im arabischen Originalwortlaut.",
 

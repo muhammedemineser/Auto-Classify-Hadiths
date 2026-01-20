@@ -6,7 +6,7 @@ engine_out = create_engine(f"sqlite:///GPT_seperator_for_{db_name}.db")
 
 ALL_TAGS = [
     "isnad",
-    "matn",
+    "hadith",
     "quran_verse",
     "asbab_al_nuzul",
     "linguistic_analysis",
@@ -149,7 +149,7 @@ mock_raw_texts = [
     """
     <isnad>Kette 1: Malik -> Nafi -> Ibn Umar</isnad>
     <isnad>Kette 2: Schafi'i -> Malik</isnad>
-    <matn>Handlungen sind entsprechend der Absichten.</matn>
+    <hadith>Handlungen sind entsprechend der Absichten.</hadith>
     <had_support>
         <source>Sahih Bukhari</source>
         <source>Sahih Muslim</source>
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     with engine_out.connect() as conn:
         print("\n--- Prüfung Konkatenierung (Fall 2) ---")
         res = conn.execute(
-            text("SELECT isnad FROM tafsir_analysis WHERE matn LIKE '%Absichten%'")
+            text("SELECT isnad FROM tafsir_analysis WHERE hadith LIKE '%Absichten%'")
         ).fetchone()
         if res and res[0]:
             lines = res[0].split("\n")
