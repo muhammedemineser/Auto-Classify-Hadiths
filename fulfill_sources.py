@@ -1,6 +1,5 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
-
 import pyautogui
 import pyperclip
 import regex
@@ -8,7 +7,8 @@ from bs4 import BeautifulSoup
 from sqlalchemy import MetaData, Table, create_engine, select, text
 from ocr import OCRWatcher
 
-
+pyautogui.FAILSAFE = True
+pyautogui.PAUSE = 0.05
 PRIMARY_TAGS = {
     "isnad": "Die Übertragungskette von Personen, die zur eigentlichen Aussage (Hadith Matn) führt.",
     "matn": "Der eigentliche Wortlaut oder Haupttext einer überlieferten Aussage (Hadith), abzüglich der Übertragungskette.",
@@ -94,40 +94,83 @@ RX_RECURSIVE = regex.compile(
     r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*)</(?P=tag)>"
 )
 
+BLOCK_TAG = "tafsir_section_block"
+CHUNK_TAG = "tafsir_chunk"
+
 watcher_a = OCRWatcher(17, 146, 712, 842)
 watcher_b = OCRWatcher(38, 2, 83, 35)
 
 
-def cleanup_cycle(extracted_text: str):
-    """Hard-refresh the page and reset devtools/clipboard to keep the browser snappy."""
+def cleanup_cycle(
+    batch,
+    executor,
+    engine_out,
+    section_table,
+    block_table,
+    chunk_table,
+    flush_batch=False,
+):
+    """
+    Fetch the current response, optionally flush the batch, then hard-refresh and reset
+    devtools/clipboard to keep the browser snappy.
+    """
+    extracted_text = get_code_from_devtools()
+    if extracted_text:
+        batch.append(extracted_text)
+
+    if flush_batch and batch:
+        executor.submit(
+            bulk_insert_tafsir,
+            engine_out,
+            section_table,
+            block_table,
+            chunk_table,
+            list(batch),
+        )
+        batch.clear()
+
+    pyautogui.click(x=220, y=1053)
+    time.sleep(0.5)
     pyautogui.hotkey("ctrl", "shift", "r")
     watcher_window_reload = watcher_b.run()
     if watcher_window_reload is True:
-        extracted_text = get_code_from_devtools()
+        pyautogui.moveTo(x=1274, y=940, duration=0.15)
+        time.sleep(0.5)
+        pyautogui.click()
+        pyautogui.moveTo(x=1377, y=869, duration=0.15)
+        time.sleep(0.5)
+        pyautogui.click()
         print("Antwort gespeichert. Nächster Durchgang...")
     pyperclip.copy("")  # free clipboard buffer
     time.sleep(0.5)
+    pyautogui.click(x=220, y=1053)
+    return extracted_text
 
 
 def get_code_from_devtools():
-    time.sleep(2)
-
     pyautogui.hotkey("ctrl", "f")
-    time.sleep(1.5)
+    time.sleep(0.5)
     # ChatGPT
     # search_term = "overflow-visible! px-0!"
     search_term = "code-container formatted ng-tns-"
     pyperclip.copy(search_term)
     pyautogui.hotkey("ctrl", "v")
-    time.sleep(2)
-    pyautogui.moveTo(x=1396, y=1000)
-    pyautogui.click()
-    pyautogui.moveTo(x=814, y=124)
-    pyautogui.click()
     time.sleep(1)
+    pyautogui.moveTo(x=1421, y=1005)
+    time.sleep(0.5)
+    pyautogui.click()
+    pyautogui.moveTo(x=814, y=124, duration=0.15)
+    time.sleep(0.5)
+    pyautogui.click()
+    pyautogui.moveTo(x=1000, y=121, duration=0.15)
+    time.sleep(0.5)
+    pyautogui.click()
+    time.sleep(0.5)
     pyautogui.hotkey("ctrl", "c")
-    time.sleep(1.2)
+    time.sleep(0.3)
     pyautogui.hotkey("ctrl", "shift", "i")
+    time.sleep(0.3)
+    pyautogui.click(x=220, y=1053)
 
     html_content = pyperclip.paste()
     soup = BeautifulSoup(html_content, "html.parser")
@@ -162,12 +205,62 @@ def extract_nested_data(xml):
     return row
 
 
-def setup_analysis_table(engine_out, table_name):
+def extract_section_blocks(xml, tafsir_section_id):
+    if not xml:
+        return []
+
+    try:
+        soup = BeautifulSoup(xml, "xml")
+    except Exception:
+        return []
+
+    blocks = soup.find_all(BLOCK_TAG)
+    if not blocks:
+        return []
+
+    block_rows = []
+    for block in blocks:
+        block_rows.append(
+            {
+                "tafsir_section_id": tafsir_section_id,
+                "block": str(block),
+            }
+        )
+
+    return block_rows
+
+
+def extract_block_chunks(block_xml, tafsir_block_id):
+    if not block_xml:
+        return []
+
+    try:
+        soup = BeautifulSoup(block_xml, "xml")
+    except Exception:
+        return []
+
+    chunks = soup.find_all(CHUNK_TAG)
+    if not chunks:
+        return []
+
+    chunk_rows = []
+    for chunk in chunks:
+        chunk_rows.append(
+            {
+                "tafsir_chunks": tafsir_block_id,
+                "chunk": str(chunk),
+            }
+        )
+    return chunk_rows
+
+
+def setup_analysis_tables(engine_out, section_table, block_table, chunk_table):
     with engine_out.begin() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
         cols_sql = ", ".join(f"{c} TEXT" for c in ALL_COLUMNS)
         sql = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
+        CREATE TABLE IF NOT EXISTS {section_table} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             {cols_sql},
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -175,20 +268,94 @@ def setup_analysis_table(engine_out, table_name):
         """
         conn.execute(text(sql))
 
+        block_sql = f"""
+        CREATE TABLE IF NOT EXISTS {block_table} (
+            tafsir_section_id INTEGER NOT NULL,
+            block TEXT NOT NULL,
+            FOREIGN KEY (tafsir_section_id) REFERENCES {section_table}(id) ON DELETE CASCADE
+        );
+        """
+        conn.execute(text(block_sql))
+        index_sql = f"""
+        CREATE INDEX IF NOT EXISTS idx_{block_table}_section
+        ON {block_table} (tafsir_section_id);
+        """
+        conn.execute(text(index_sql))
 
-def bulk_insert_tafsir(engine, table_name, raw_texts):
-    rows = [extract_nested_data(t) for t in raw_texts if t]
+        chunk_sql = f"""
+        CREATE TABLE IF NOT EXISTS {chunk_table} (
+            tafsir_chunks INTEGER NOT NULL,
+            chunk TEXT NOT NULL,
+            FOREIGN KEY (tafsir_chunks) REFERENCES {block_table}(rowid) ON DELETE CASCADE
+        );
+        """
+        conn.execute(text(chunk_sql))
+        chunk_index_sql = f"""
+        CREATE INDEX IF NOT EXISTS idx_{chunk_table}_block
+        ON {chunk_table} (tafsir_chunks);
+        """
+        conn.execute(text(chunk_index_sql))
+
+
+def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, raw_texts):
+    rows = [t for t in raw_texts if t]
     if not rows:
         return
 
-    cols = ", ".join(ALL_COLUMNS)
-    vals = ", ".join(f":{c}" for c in ALL_COLUMNS)
-    stmt = text(f"INSERT INTO {table_name} ({cols}) VALUES ({vals})")
+    section_cols = ", ".join(ALL_COLUMNS)
+    section_vals = ", ".join(f":{c}" for c in ALL_COLUMNS)
+    section_stmt = text(
+        f"INSERT INTO {section_table} ({section_cols}) VALUES ({section_vals})"
+    )
 
+    block_stmt = text(
+        f"INSERT INTO {block_table} (tafsir_section_id, block) VALUES (:tafsir_section_id, :block)"
+    )
+
+    chunk_stmt = text(
+        f"INSERT INTO {chunk_table} (tafsir_chunks, chunk) VALUES (:tafsir_chunks, :chunk)"
+    )
+
+    block_total = 0
+    chunk_total = 0
     with engine.begin() as conn:
-        conn.execute(stmt, rows)
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        for raw in rows:
+            section_row = extract_nested_data(raw)
+            section_result = conn.execute(section_stmt, section_row)
+            section_id = section_result.lastrowid
+            if section_id is None:
+                section_id = conn.exec_driver_sql("SELECT last_insert_rowid()").scalar()
 
-    print(f"Erfolg: {len(rows)} Datensätze in {table_name} eingefügt.")
+            block_rows = extract_section_blocks(raw, section_id)
+            if not block_rows:
+                block_rows = [
+                    {"tafsir_section_id": section_id, "block": raw},
+                ]
+
+            for block_row in block_rows:
+                block_result = conn.execute(block_stmt, block_row)
+                block_id = block_result.lastrowid
+                if block_id is None:
+                    block_id = conn.exec_driver_sql(
+                        "SELECT last_insert_rowid()"
+                    ).scalar()
+
+                block_total += 1
+                chunk_rows = extract_block_chunks(block_row["block"], block_id)
+                if not chunk_rows:
+                    chunk_rows = [
+                        {"tafsir_chunks": block_id, "chunk": block_row["block"]}
+                    ]
+
+                conn.execute(chunk_stmt, chunk_rows)
+                chunk_total += len(chunk_rows)
+
+    print(f"Erfolg: {len(rows)} Datensätze in {section_table} eingefügt.")
+    print(
+        f"Erfolg: {block_total} Tafsir_section_block-Einträge in {block_table} eingefügt."
+    )
+    print(f"Erfolg: {chunk_total} Tafsir_chunk-Einträge in {chunk_table} eingefügt.")
 
 
 PROMPT_PREFIX = f"""
@@ -198,6 +365,9 @@ Auftrag: Analyse und Annotation eines Exegese-Abschnitts unter strikter Einhaltu
 INSTRUKTIONEN:
 1. Analysiere den bereitgestellten Text tiefgreifend und zerlege ihn in seine funktionalen Bestandteile.
 2. Kennzeichne JEDEN Bestandteil ausschließlich mit den Elementen aus der folgenden Variable:
+3. Segmentiere die <tafsir_section> in <tafsir_section_block>-Elemente basierend auf strikter **semantischer Geschlossenheit**. WICHTIG: Vermeide kleinteilige Fragmentierung. Fasse zusammengehörige Inhalte (z. B. komplette Hadith-Erörterungen inklusive Isnad/Matn/Bewertung, abgeschlossene juristische Herleitungen oder volle thematische Einheiten) in einem einzigen, großen Block zusammen. Der `innerText` jedes Blocks muss für sich alleinstehend inhaltlich verständlich und der Kontext gewahrt bleiben.
+4. Bewahre die Originalreihenfolge der Passage und ordne jedes <tafsir_section_block> eindeutig seiner übergeordneten <tafsir_section> zu (Many-to-One-Zuordnung ohne inhaltliche Überschneidung zwischen Blöcken).
+5. Unterteile jede <tafsir_section_block> weiter in <tafsir_chunk>-Elemente, wobei jedes Chunk genau eine inhaltliche Einheit abbildet (z.B. ein Isnad, der zugehörige Hadith/Matn, Meinungen, erklärende Passagen). Reihenfolge beibehalten, keine Überschneidungen zwischen Chunks.
 
 "Kategorie der 'Null-Toleranz'. Diese Elemente bilden das Skelett jeder Exegese. Eine Fehlklassifizierung oder das Auslassen bei eindeutigem Vorkommen gilt als struktureller Fehler."
 "Erzwinge höchste Präzision. Jeder Korantext MUSS als <quran_verse> markiert sein. Jede Namenskette MUSS als <isnad> gekennzeichnet werden. Jede namentliche Nennung eines Werkes, Autors oder Primärquellen-Gebers MUSS als <source> identifiziert werden. Jede direkte oder indirekte Deutung klassischer Exegeten MUSS <opinions_of_scholars> umschließen. Der eigentliche inhaltliche Wortlaut einer Überlieferung abzüglich der Kette MUSS als <matn> definiert werden."
@@ -210,16 +380,19 @@ INSTRUKTIONEN:
 
 
 STRIKTE REGELN FÜR DIE AUSGABE:
+- Format: Gib die komplette Antwort ausschließlich innerhalb eines ```xml``` Codeblocks zurück.
 - Literal Execution: Entferne, verändere oder kürze NIEMALS den Originalinhalt.
 - Rekursion: Verschachtele Tags, wenn ein Element (z. B. <argument>) andere Elemente (z. B. <source>) enthält.
 - Vollständigkeit: Der gesamte Input muss Teil der Antwort sein (Input ist Teilmenge des Outputs).
 - Reinheit: Keine Einleitungen, Erklärungen oder Meta-Kommentare. Nur der annotierte Text.
+- Validierung: Führe vor jeder Ausgabe eine vollständige Prüfung der XML-Struktur auf Wohlförmigkeit durch.
+- Exklusivität: Die Antwort darf ausschließlich aus wohlgeformtem, syntaktisch korrektem XML bestehen; keinerlei zusätzlicher Text, Einleitungen oder Zusätze sind zulässig.
 - Schema-Treue: Nutze ausschließlich die Tags, die in der Variable RX_TAFSIR_XML definiert sind.
 - Rekursive Deduplizierung: Das Speichern identischer, ineinander verschachtelter Elemente in derselben Datenkategorie (Ziel-Spalte) ist untersagt. 
 - Wenn ein Element (Tag + Inhalt) bereits in der Ziel-Variable existiert, darf es trotz rekursiver Treffer kein zweites Mal konkateniert werden. 
 - Dies gilt insbesondere für Selbstreferenzierung: Wenn ein Tag in sich selbst verschachtelt ist, wird nur die äußerste Instanz für diese spezifische Kategorie gewertet, während der Inhalt zur weiteren Extraktion nachgeordneter Tags rekursiv verarbeitet wird.
 
-Hier folgt der Abschnitt einer Koranexegese:
+In meiner Nachricht die ich an dich sende, ist der Abschnitt einer Koranexegese:
 
 """
 
@@ -241,7 +414,9 @@ def automate_gemini(db):
         f"sqlite:///{db_path_out}", connect_args={"check_same_thread": False}
     )
     target_table = f"tafsir_analysis_{db}"
-    setup_analysis_table(engine_out, target_table)
+    block_table = f"{target_table}_blocks"
+    chunk_table = f"{target_table}_chunks"
+    setup_analysis_tables(engine_out, target_table, block_table, chunk_table)
 
     with engine_in.connect() as connection, ThreadPoolExecutor(
         max_workers=4
@@ -255,52 +430,75 @@ def automate_gemini(db):
             original_text = row[0]
             if not original_text:
                 continue
-            original_text = original_text.replace("<p>", "").replace("</p>", "")
-            full_text = PROMPT_PREFIX + original_text
-            pyperclip.copy(full_text)
+            pyperclip.copy(
+                PROMPT_PREFIX
+                + " ".join(
+                    original_text.replace("<p>", " ").replace("</p>", " ").split()
+                )
+            )
+            pyautogui.click(x=220, y=1053)  # open browser
 
-            pyautogui.click(x=220, y=1053)
             # ChatGPT
             # pyautogui.click(x=597, y=933)
             # Gemini
             time.sleep(1.5)
-            pyautogui.click(x=711, y=879)
-            time.sleep(0.5)
-            pyautogui.click(x=666, y=891)
-            time.sleep(0.5)
-            pyautogui.click(x=666, y=891)
-            time.sleep(0.3)
+            pyautogui.hotkey("ctrl", "end")
+            time.sleep(1.0)
+
+            # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
+            for _ in range(3):
+                pyautogui.moveTo(927, 891, duration=0.15)
+                pyautogui.click()
+                time.sleep(0.2)
+
+            # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
             pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.5)
+            time.sleep(0.1)
             pyautogui.press("backspace")
+            time.sleep(0.2)
+
+            # 3. Inhalt einfügen
             pyautogui.hotkey("ctrl", "v")
-            time.sleep(1.5)
-            pyautogui.press("enter")
-            time.sleep(0.5)
+            time.sleep(0.6)
+
+            # 4. Absenden (Enter mehrfach + Delay)
+            for _ in range(2):
+                pyautogui.press("enter")
+                time.sleep(0.2)
+
+            time.sleep(5)
+
             print("Warte auf Antwort von Gemini...")
             pyautogui.hotkey("ctrl", "shift", "i")
             time.sleep(1.5)
+            pyautogui.moveTo(x=733, y=351, duration=0.15)
+            pyautogui.click()
+            pyautogui.hotkey("ctrl", "end")
+            time.sleep(2)
+            pyautogui.moveTo(x=972, y=99, duration=0.15)
+            pyautogui.click()
 
             watcher_gemini_response = watcher_a.run()
             if watcher_gemini_response is True:
-                extracted_text = get_code_from_devtools()
                 if i % 5 == 0:
-                    cleanup_cycle(extracted_text)
+                    extracted_text = cleanup_cycle(
+                        batch,
+                        executor,
+                        engine_out,
+                        target_table,
+                        block_table,
+                        chunk_table,
+                        flush_batch=i % 5 == 0,
+                    )
+                else:
+                    extracted_text = get_code_from_devtools()
+                    if extracted_text:
+                        batch.append(extracted_text)
 
             if not extracted_text:
                 print("Kein Code gefunden.")
                 break
 
-            batch.append(extracted_text)
-            if i % 5 == 0 and batch:
-                executor.submit(
-                    bulk_insert_tafsir,
-                    engine_out,
-                    target_table,
-                    list(batch),
-                )
-                batch.clear()
-                cleanup_cycle()
             print("Antwort gespeichert. Nächster Durchgang...")
 
         if batch:
@@ -308,6 +506,8 @@ def automate_gemini(db):
                 bulk_insert_tafsir,
                 engine_out,
                 target_table,
+                block_table,
+                chunk_table,
                 list(batch),
             )
 

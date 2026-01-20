@@ -20,6 +20,7 @@ pyscreeze = "*"
 opencv-python = "*"
 beautifulsoup4 = "*"
 easyocr = "*"
+mss = "*"
 
 [dev-packages]
 ipykernel = "*"
