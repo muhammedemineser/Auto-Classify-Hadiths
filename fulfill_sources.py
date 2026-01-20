@@ -1,78 +1,94 @@
 import time
-import pyperclip
+from concurrent.futures import ThreadPoolExecutor
+
 import pyautogui
+import pyperclip
 import regex
 from bs4 import BeautifulSoup
 from sqlalchemy import MetaData, Table, create_engine, select, text
 
 
-ALL_TAGS = [
-    "isnad",
-    "matn",
-    "quran_verse",
-    "asbab_al_nuzul",
-    "linguistic_analysis",
-    "qiraat",
-    "cross_references",
-    "hadith_support",
-    "opinions_of_scholars",
-    "fiqh_implications",
-    "theological_points",
-    "historical_context",
-    "explanation",
-    "source",
-    "balagha_analysis",
-    "nasikh_wa_mansukh",
-    "grammatical_parsing",
-    "etymology",
-    "parabolic_meaning",
-    "sectarian_perspective",
-    "spiritual_lessons",
-    "biographies_of_narrators",
-    "ijma_status",
-    "reason_for_revelation_variants",
-    "legal_maxims",
-    "maqasid_al_sharia",
-    "variant_interpretations",
-    "minority_opinions",
-    "majority_opinions",
-    "literal_interpretation",
-    "metaphorical_interpretation",
-    "contextual_scope",
-    "general_vs_specific",
-    "absolute_vs_restricted",
-    "command_and_prohibition",
-    "rhetorical_devices",
-    "semantic_fields",
-    "synonym_analysis_homonym_antonym_analysis",
-    "chronological_order",
-    "meccan_medinan",
-    "intertextual_links",
-    "israiliyyat",
-    "philosophical_reflections",
-    "ethical_implications",
-    "creedal_implications",
-    "aqidah_classification",
-    "scientific_allusions",
-    "cosmological_notes",
-    "social_norms",
-    "political_implications",
-    "pedagogical_lessons",
-    "daawah_applications",
-    "practical_guidance",
-    "ritual_implications",
-    "disputed_terms",
-    "technical_definitions",
-    "textual_variants",
-    "manuscript_evidence",
-    "chain_evaluation",
-    "narrator_criticism",
-    "comparative_tafsir",
-    "methodological_notes",
-    "argument",
-    "summary",
-    "conclusion",
-]
+PRIMARY_TAGS = {
+    "isnad": "Die Übertragungskette von Gewährspersonen, die zu einer Aussage (Hadith oder Gelehrtenmeinung) führt.",
+    "matn": "Der eigentliche Wortlaut oder Haupttext einer überlieferten Aussage (Hadith), abzüglich der Übertragungskette.",
+    "source": "Die explizite Nennung eines Werkes, Autors oder Primärquellen-Gebers (z. B. 'Überliefert bei Buchari' oder 'Sagt Ibn Kathir').",
+    "quran_verse": "Direktes Zitat aus dem Koran im arabischen Originalwortlaut.",
+    "opinions_of_scholars": "Zusammenfassung oder direktes Zitat von Deutungen klassischer Exegeten (Tafsir-Gelehrte).",
+}
+
+SECONDARY_TAGS = {
+    "command_and_prohibition": "Textstellen, die explizite Gebote (Amr) oder Verbote (Nahy) aus dem Vers ableiten.",
+    "chain_evaluation": "Fachliche Bewertung der Qualität einer Überlieferungskette (z. B. Sahih, Da'if, Hassan).",
+    "narrator_criticism": "Detaillierte Analyse oder Kritik einzelner Personen innerhalb einer Übertragungskette (Ilm al-Rijal).",
+    "asbab_al_nuzul": "Berichte über den spezifischen historischen Anlass oder den Kontext der Offenbarung eines Verses.",
+    "hadith_support": "Einbeziehung prophetischer Überlieferungen zur Untermauerung der Exegese.",
+    "explanation": "Allgemeiner erläuternder Kommentar des Autors zum Verständnis des Textes.",
+}
+
+REMAINING_ALL_TAGS = {
+    "linguistic_analysis": "Untersuchung von Wortbedeutungen, Morphologie oder allgemeiner Sprachverwendung.",
+    "qiraat": "Hinweise auf verschiedene anerkannte Lesarten des Korantextes.",
+    "cross_references": "Verweise auf andere Koranstellen, die den aktuellen Vers erläutern.",
+    "fiqh_implications": "Ableitung von rechtlichen Bestimmungen und juristischen Regeln aus dem Vers.",
+    "theological_points": "Glaubenslehre (Aqidah) betreffende Schlussfolgerungen oder dogmatische Fragen.",
+    "historical_context": "Allgemeine historische Rahmenbedingungen zur Zeit der Offenbarung (nicht spezifisch Asbab al-Nuzul).",
+    "balagha_analysis": "Analyse der rhetorischen Schönheit, Eloquenz und Stilistik (Rhetorik).",
+    "nasikh_wa_mansukh": "Diskussion über abrogierende (aufhebende) und abrogierte Verse.",
+    "grammatical_parsing": "Syntax-Analyse (I'rab) und grammatikalische Zerlegung der Sätze.",
+    "etymology": "Untersuchung des Ursprungs und der historischen Entwicklung einzelner Wörter.",
+    "parabolic_meaning": "Deutung von Gleichnissen, Metaphern und allegorischen Darstellungen.",
+    "sectarian_perspective": "Interpretation aus Sicht einer spezifischen theologischen Schule (z. B. Mu'tazila, Schia).",
+    "spiritual_lessons": "Ethische, moralische oder sufisch-spirituelle Einsichten für das Seelenleben.",
+    "biographies_of_narrators": "Biografische Informationen über die in der Isnad genannten Personen.",
+    "ijma_status": "Feststellung eines Konsenses unter den Gelehrten zu einer bestimmten Auslegung.",
+    "reason_for_revelation_variants": "Diskussion über unterschiedliche Berichte zum Offenbarungsanlass.",
+    "legal_maxims": "Anwendung allgemeiner Rechtsgrundsätze (Qawa'id Fiqhiyya).",
+    "maqasid_al_sharia": "Einordnung des Verses in die übergeordneten Ziele des islamischen Rechts.",
+    "variant_interpretations": "Gegenüberstellung verschiedener, sich teils widersprechender Deutungsmöglichkeiten.",
+    "minority_opinions": "Kennzeichnung von Auslegungen, die nur von einer Minderheit vertreten werden.",
+    "majority_opinions": "Kennzeichnung der von der Mehrheit der Gelehrten (Jumhur) vertretenen Ansicht.",
+    "literal_interpretation": "Auslegung basierend auf der rein äußerlichen, wortwörtlichen Bedeutung (Zahir).",
+    "metaphorical_interpretation": "Auslegung, die eine übertragene, bildliche Bedeutung (Ta'wil) annimmt.",
+    "contextual_scope": "Bestimmung des Geltungsbereichs eines Verses basierend auf dem Kontext.",
+    "general_vs_specific": "Unterscheidung, ob eine Aussage allgemein ('Amm) oder spezifisch (Khass) gemeint ist.",
+    "absolute_vs_restricted": "Unterscheidung zwischen uneingeschränkten (Mutlaq) und bedingten (Muqayyad) Aussagen.",
+    "rhetorical_devices": "Identifikation spezifischer rhetorischer Figuren (z. B. Metonymie, Ironie).",
+    "semantic_fields": "Analyse von Wortgruppen, die einen gemeinsamen Bedeutungsraum abdecken.",
+    "synonym_analysis_homonym_antonym_analysis": "Vergleich von sinnverwandten, gleichlautenden oder gegensätzlichen Begriffen.",
+    "chronological_order": "Einordnung des Verses in die zeitliche Abfolge der Offenbarung.",
+    "meccan_medinan": "Klassifizierung, ob ein Vers in Mekka oder Medina offenbart wurde.",
+    "intertextual_links": "Bezüge zu anderen religiösen Texten oder literarischen Werken.",
+    "israiliyyat": "Hinweise auf Erzählungen biblischen Ursprungs oder jüdisch-christlicher Tradition.",
+    "philosophical_reflections": "Abstrakte philosophische Überlegungen, die über die reine Exegese hinausgehen.",
+    "ethical_implications": "Direkte Ableitung moralischer Verhaltensregeln für das Individuum.",
+    "creedal_implications": "Spezifische Auswirkungen auf das Glaubensbekenntnis.",
+    "aqidah_classification": "Systematische Zuordnung zu Kategorien der Glaubenslehre.",
+    "scientific_allusions": "Interpretation von Versen in Bezug auf naturwissenschaftliche Erkenntnisse.",
+    "cosmological_notes": "Anmerkungen zur Struktur des Universums, Himmel und Erde.",
+    "social_norms": "Bezug auf gesellschaftliche Gepflogenheiten und soziale Strukturen.",
+    "political_implications": "Bezüge zu Herrschaft, Staatswesen und politischer Ordnung.",
+    "pedagogical_lessons": "Erziehungswissenschaftliche oder didaktische Rückschlüsse.",
+    "daawah_applications": "Relevanz des Verses für die Glaubensverkündung und Mission.",
+    "practical_guidance": "Konkrete Handlungsempfehlungen für den Alltag des Gläubigen.",
+    "ritual_implications": "Auswirkungen auf die Durchführung gottesdienstlicher Handlungen (Ibadat).",
+    "disputed_terms": "Analyse von Begriffen, deren Bedeutung unter Gelehrten stark umstritten ist.",
+    "technical_definitions": "Definition von Fachbegriffen innerhalb der islamischen Wissenschaften.",
+    "textual_variants": "Untersuchung von Abweichungen in verschiedenen Manuskripten oder Kodizes.",
+    "manuscript_evidence": "Verweise auf physische Beweise in alten Koranhandschriften.",
+    "comparative_tafsir": "Methodischer Vergleich zwischen verschiedenen Tafsir-Werken.",
+    "methodological_notes": "Anmerkungen des Exegeten zu seiner eigenen methodischen Vorgehensweise.",
+    "argument": "Logische Beweisführung oder dialektische Argumentation zur Stützung einer These.",
+    "summary": "Kurze Zusammenfassung eines längeren Abschnitts oder einer Argumentationskette.",
+    "conclusion": "Abschließendes Urteil oder Fazit am Ende einer Analyse.",
+}
+
+ALL_TAGS = (
+    list(PRIMARY_TAGS.keys())
+    + list(SECONDARY_TAGS.keys())
+    + list(REMAINING_ALL_TAGS.keys())
+)
+RAW_COL = "extracted_text_full"
+ALL_COLUMNS = ALL_TAGS + [RAW_COL]
 
 RX_RECURSIVE = regex.compile(
     r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*)</(?P=tag)>"
@@ -80,11 +96,11 @@ RX_RECURSIVE = regex.compile(
 
 
 def get_code_from_devtools():
-    pyautogui.hotkey("ctrl", "shift", "c")
+    pyautogui.hotkey("ctrl", "shift", "i")
     time.sleep(2)
 
     pyautogui.hotkey("ctrl", "f")
-    time.sleep(0.5)
+    time.sleep(1.5)
     # ChatGPT
     # search_term = "overflow-visible! px-0!"
     search_term = "code-container formatted ng-tns-"
@@ -95,7 +111,7 @@ def get_code_from_devtools():
     pyautogui.click(x=814, y=124)
     time.sleep(1)
     pyautogui.hotkey("ctrl", "c")
-    time.sleep(0.2)
+    time.sleep(1.2)
     pyautogui.hotkey("ctrl", "shift", "i")
 
     html_content = pyperclip.paste()
@@ -127,11 +143,12 @@ def extract_nested_data(xml):
     row = {tag: None for tag in ALL_TAGS}
     if xml:
         _walk(xml, row)
+    row[RAW_COL] = xml
     return row
 
 
 def setup_analysis_table(engine_out, table_name):
-    cols_sql = ", ".join(f"{c} TEXT" for c in ALL_TAGS)
+    cols_sql = ", ".join(f"{c} TEXT" for c in ALL_COLUMNS)
     sql = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,8 +165,8 @@ def bulk_insert_tafsir(engine, table_name, raw_texts):
     if not rows:
         return
 
-    cols = ", ".join(ALL_TAGS)
-    vals = ", ".join(f":{c}" for c in ALL_TAGS)
+    cols = ", ".join(ALL_COLUMNS)
+    vals = ", ".join(f":{c}" for c in ALL_COLUMNS)
     stmt = text(f"INSERT INTO {table_name} ({cols}) VALUES ({vals})")
 
     with engine.begin() as conn:
@@ -158,7 +175,7 @@ def bulk_insert_tafsir(engine, table_name, raw_texts):
     print(f"Erfolg: {len(rows)} Datensätze in {table_name} eingefügt.")
 
 
-PROMPT_PREFIX = """
+PROMPT_PREFIX = f"""
 Rolle: Daten-Analyst für Koranexegese (Tafsir).
 Auftrag: Analyse und Annotation eines Exegese-Abschnitts unter strikter Einhaltung einer XML-Struktur.
 
@@ -166,37 +183,15 @@ INSTRUKTIONEN:
 1. Analysiere den bereitgestellten Text tiefgreifend und zerlege ihn in seine funktionalen Bestandteile.
 2. Kennzeichne JEDEN Bestandteil ausschließlich mit den Elementen aus der folgenden Variable:
 
-import regex
+"Kategorie der 'Null-Toleranz'. Diese Elemente bilden das Skelett jeder Exegese. Eine Fehlklassifizierung oder das Auslassen bei eindeutigem Vorkommen gilt als struktureller Fehler."
+"Erzwinge höchste Präzision. Jeder Korantext MUSS als <quran_verse> markiert sein. Jede Namenskette MUSS als <isnad> gekennzeichnet werden. Jede namentliche Nennung eines Werkes, Autors oder Primärquellen-Gebers MUSS als <source> identifiziert werden. Jede direkte oder indirekte Deutung klassischer Exegeten MUSS <opinions_of_scholars> umschließen. Der eigentliche inhaltliche Wortlaut einer Überlieferung abzüglich der Kette MUSS als <matn> definiert werden."
+{PRIMARY_TAGS}
+"Funktionale Erweiterungen, die den Gehalt der Kern-Elemente präzisieren. Sie sollen markiert werden, wenn die Indikatoren (z.B. 'wegen...', 'das bedeutet rechtlich...', 'sprachlich...') explizit im Text stehen.",
+{SECONDARY_TAGS}
+"Spezialkategorien für tiefe Fachanalysen. Diese Tags dürfen NUR verwendet werden, wenn der Treffer zu 100% eindeutig ist (z.B. explizite Erwähnung von Rhetorik, Abrogation oder wissenschaftlichen Fakten). Im Zweifelsfall weglassen, um Rauschen zu vermeiden.",
+"Threshold-Maximum. Nutze diese Tags nur als 'Scharfschütze'. Ein False-Positive in dieser Kategorie wiegt schwerer als ein fehlender Tag."
+{REMAINING_ALL_TAGS}
 
-RX_TAFSIR_XML = regex.compile(
-    r"(?s)<(?P<tag>"
-    r"isnad|matn|quran_verse|asbab_al_nuzul|linguistic_analysis|qiraat|"
-    r"cross_references|hadith_support|opinions_of_scholars|fiqh_implications|"
-    r"theological_points|historical_context|explanation|source|"
-    r"balagha_analysis|nasikh_wa_mansukh|grammatical_parsing|etymology|"
-    r"parabolic_meaning|sectarian_perspective|spiritual_lessons|"
-    r"biographies_of_narrators|ijma_status|"
-    r"reason_for_revelation_variants|legal_maxims|maqasid_al_sharia|"
-    r"variant_interpretations|minority_opinions|majority_opinions|"
-    r"literal_interpretation|metaphorical_interpretation|"
-    r"contextual_scope|general_vs_specific|absolute_vs_restricted|"
-    r"command_and_prohibition|rhetorical_devices|semantic_fields|"
-    r"synonym_analysis_homonym_antonym_analysis|"
-    r"chronological_order|meccan_medinan|"
-    r"intertextual_links|israiliyyat|"
-    r"philosophical_reflections|ethical_implications|"
-    r"creedal_implications|aqidah_classification|"
-    r"scientific_allusions|cosmological_notes|"
-    r"social_norms|political_implications|"
-    r"pedagogical_lessons|daawah_applications|"
-    r"practical_guidance|ritual_implications|"
-    r"disputed_terms|technical_definitions|"
-    r"textual_variants|manuscript_evidence|"
-    r"chain_evaluation|narrator_criticism|"
-    r"comparative_tafsir|methodological_notes|"
-    r"argument|summary|conclusion"
-    r")>(?P<content>(?:[^<]|(?R))*?)</(?P=tag)>"
-)
 
 STRIKTE REGELN FÜR DIE AUSGABE:
 - Literal Execution: Entferne, verändere oder kürze NIEMALS den Originalinhalt.
@@ -225,13 +220,15 @@ def automate_gemini(db):
     metadata_in = MetaData()
     tafsir_table = Table(db, metadata_in, autoload_with=engine_in)
 
-    engine_out = create_engine(f"sqlite:///{db_path_out}")
+    engine_out = create_engine(
+        f"sqlite:///{db_path_out}", connect_args={"check_same_thread": False}
+    )
     target_table = f"tafsir_analysis_{db}"
     setup_analysis_table(engine_out, target_table)
 
-    extracted_payloads = []
-
-    with engine_in.connect() as connection:
+    with engine_in.connect() as connection, ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
         results = connection.execute(select(tafsir_table.c.text))
 
         for row in results:
@@ -247,12 +244,14 @@ def automate_gemini(db):
             # pyautogui.click(x=597, y=933)
             # Gemini
             pyautogui.click(x=711, y=879)
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.press("backspace")
             pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.5)
+            time.sleep(1.5)
             pyautogui.press("enter")
 
             print("Warte auf Antwort von Gemini...")
-            time.sleep(20)
+            time.sleep(60)
 
             extracted_text = get_code_from_devtools()
 
@@ -260,16 +259,15 @@ def automate_gemini(db):
                 print("Kein Code gefunden.")
                 break
 
-            extracted_payloads.append(extracted_text)
+            executor.submit(
+                bulk_insert_tafsir, engine_out, target_table, [extracted_text]
+            )
             print("Antwort gespeichert. Nächster Durchgang...")
-
-    bulk_insert_tafsir(engine_out, target_table, extracted_payloads)
 
 
 if __name__ == "__main__":
     try:
         for db_name in DBS:
             automate_gemini(db_name)
-            break
     except KeyboardInterrupt:
         print("\nAbgebrochen durch Benutzer.")
