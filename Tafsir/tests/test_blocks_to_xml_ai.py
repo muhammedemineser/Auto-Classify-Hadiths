@@ -229,6 +229,7 @@ def test_cleanup_cycle_flushes_batch_and_inserts(bx, tmp_path):
     bx.setup_analysis_tables(engine, section_table, block_table, chunk_table)
 
     xml = "<tafsir_section_block><tafsir_chunk><hadith>A</hadith></tafsir_chunk></tafsir_section_block>"
+
     class ImmediateExecutor:
         def __init__(self, *args, **kwargs):
             pass
@@ -257,6 +258,8 @@ def test_cleanup_cycle_flushes_batch_and_inserts(bx, tmp_path):
         chunk_table,
         flush_batch=True,
         pending_futures=pending_futures,
+        prefetched_text=xml,
+        append_to_batch=True,
     )
     for fut in pending_futures:
         fut.result()
@@ -271,6 +274,24 @@ def test_get_code_from_devtools_parses_html(bx, monkeypatch):
     monkeypatch.setattr(bx.pyperclip, "paste", lambda: "<div>hello</div>")
     result = bx.get_code_from_devtools()
     assert result == "hello"
+
+
+def test_evaluate_guard_decisions(bx):
+    source = "<tag>Hello world this is full text</tag>"
+    response_good = "<tafsir_section_block>hello world this is full text</tafsir_section_block>"
+    response_mid = "hello world this is text"
+    response_bad = "other stuff"
+
+    good = bx.evaluate_guard(source, response_good)
+    assert good["decision"] == "pass"
+    assert good["token_coverage"] >= 0.85
+    assert good["ngram_overlap"] >= 0.6
+
+    mid = bx.evaluate_guard(source, response_mid)
+    assert mid["decision"] == "log"
+
+    bad = bx.evaluate_guard(source, response_bad)
+    assert bad["decision"] == "retry"
 
 
 def test_automate_gemini_processes_all_rows_and_resumes(bx, tmp_path, monkeypatch):
@@ -296,10 +317,10 @@ def test_automate_gemini_processes_all_rows_and_resumes(bx, tmp_path, monkeypatc
     bx.bulk_insert_tafsir(out_engine, target_table, block_table, chunk_table, preprocessed)
 
     xml_responses = [
-        "<tafsir_section_block><tafsir_chunk><hadith>S2</hadith></tafsir_chunk></tafsir_section_block>",
-        "<tafsir_section_block><tafsir_chunk><hadith>S3</hadith></tafsir_chunk></tafsir_section_block>",
-        "<tafsir_section_block><tafsir_chunk><hadith>S4</hadith></tafsir_chunk></tafsir_section_block>",
-        "<tafsir_section_block><tafsir_chunk><hadith>S5</hadith></tafsir_chunk></tafsir_section_block>",
+        "<tafsir_section_block><tafsir_chunk><hadith>row 2 annotated</hadith></tafsir_chunk></tafsir_section_block>",
+        "<tafsir_section_block><tafsir_chunk><hadith>row 3 annotated</hadith></tafsir_chunk></tafsir_section_block>",
+        "<tafsir_section_block><tafsir_chunk><hadith>row 4 annotated</hadith></tafsir_chunk></tafsir_section_block>",
+        "<tafsir_section_block><tafsir_chunk><hadith>row 5 annotated</hadith></tafsir_chunk></tafsir_section_block>",
     ]
     responses_iter = iter(xml_responses)
     monkeypatch.setattr(bx, "get_code_from_devtools", lambda: next(responses_iter, ""))
@@ -340,7 +361,14 @@ def test_automate_gemini_processes_all_rows_and_resumes(bx, tmp_path, monkeypatc
     with out_engine.connect() as conn:
         saved = conn.execute(text(f"SELECT hadith FROM {chunk_table} ORDER BY id")).all()
     assert len(saved) == 6
-    assert [row[0] for row in saved] == ["P0", "P1", "S2", "S3", "S4", "S5"]
+    assert [row[0] for row in saved] == [
+        "P0",
+        "P1",
+        "row 2 annotated",
+        "row 3 annotated",
+        "row 4 annotated",
+        "row 5 annotated",
+    ]
 
 
 def test_automate_gemini_stops_when_no_extraction(bx, tmp_path, monkeypatch):

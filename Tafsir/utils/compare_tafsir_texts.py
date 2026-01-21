@@ -77,7 +77,9 @@ def normalize_text(text: str | None) -> Tuple[str, List[str]]:
     return normalized, words
 
 
-def compare_words(source_words: Sequence[str], annotated_words: Sequence[str]) -> List[str]:
+def compare_words(
+    source_words: Sequence[str], annotated_words: Sequence[str]
+) -> List[str]:
     if source_words == annotated_words:
         return []
 
@@ -113,7 +115,9 @@ def compare_words(source_words: Sequence[str], annotated_words: Sequence[str]) -
                 )
 
     if not differences and source_words != annotated_words:
-        differences.append("Texts differ after normalization, but no granular diff found.")
+        differences.append(
+            "Texts differ after normalization, but no granular diff found."
+        )
 
     return differences
 
@@ -204,7 +208,10 @@ def main() -> None:
     book = args.book.lower()
 
     source_db = args.source_db or base_dir / "tafsir_books" / f"{book}.sqlite3"
-    annotated_db = args.annotated_db or base_dir / "tafsir_books_annotated" / f"{book}_annotated.sqlite3"
+    annotated_db = (
+        args.annotated_db
+        or base_dir / "tafsir_books_annotated" / f"{book}_annotated.sqlite3"
+    )
     source_table = args.source_table or book
     annotated_table = args.annotated_table or f"tafsir_analysis_{book}"
     annotated_column = resolve_annotated_column(

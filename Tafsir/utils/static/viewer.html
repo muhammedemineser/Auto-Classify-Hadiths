@@ -948,7 +948,10 @@
         hitIndex = (hitIndex + 1) % hitNodes.length;
         const node = hitNodes[hitIndex];
         const rect = node.getBoundingClientRect();
-        const top = rect.top + window.scrollY - 110;
+        const headerHeight = headerEl
+          ? headerEl.getBoundingClientRect().height
+          : 0;
+        const top = rect.top + window.scrollY - headerHeight;
         window.scrollTo({ top, behavior: "smooth" });
         node.classList.add("focused-hit");
       }

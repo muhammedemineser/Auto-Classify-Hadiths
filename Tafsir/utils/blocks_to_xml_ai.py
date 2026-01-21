@@ -12,6 +12,10 @@ from TAGS import PRIMARY_TAGS, SECONDARY_TAGS, REMAINING_ALL_TAGS
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
+def _write_log(path, entry):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
 ALL_TAGS = (
     list(PRIMARY_TAGS.keys())
     + list(SECONDARY_TAGS.keys())
@@ -32,6 +36,63 @@ RX_CHUNK = regex.compile(rf"(?s)<{CHUNK_TAG}>(?P<content>(?:[^<]|(?R))*)</{CHUNK
 watcher_a = OCRWatcher(17, 146, 712, 842)
 watcher_b = OCRWatcher(38, 2, 83, 35)
 
+GUARD_NGRAM_SIZE = 3
+GUARD_MAX_RETRIES = 2
+
+
+def _normalize_guard_tokens(text):
+    if not text:
+        return []
+    no_tags = regex.sub(r"<[^>]+>", " ", text)
+    normalized = " ".join(no_tags.split()).lower()
+    if not normalized:
+        return []
+    return normalized.split()
+
+
+def _ngram_set(tokens, n):
+    if not tokens:
+        return set()
+    n = max(1, min(n, len(tokens)))
+    return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def evaluate_guard(source_text, response_text, n=GUARD_NGRAM_SIZE):
+    """
+    Lightweight guard to detect technical failures (missing/partial/other text).
+    Returns metrics and decision: pass | retry | log.
+    """
+    source_tokens = _normalize_guard_tokens(source_text)
+    response_tokens = _normalize_guard_tokens(response_text)
+
+    if not source_tokens or not response_tokens:
+        return {"token_coverage": 0.0, "ngram_overlap": 0.0, "decision": "retry"}
+
+    response_set = set(response_tokens)
+    hits = sum(1 for t in source_tokens if t in response_set)
+    token_coverage = hits / len(source_tokens)
+
+    n = max(1, min(n, len(source_tokens), len(response_tokens)))
+    source_ngrams = _ngram_set(source_tokens, n)
+    response_ngrams = _ngram_set(response_tokens, n)
+    if source_ngrams:
+        ngram_overlap = len(source_ngrams & response_ngrams) / len(source_ngrams)
+    else:
+        ngram_overlap = 0.0
+
+    if token_coverage >= 0.85 and ngram_overlap >= 0.6:
+        decision = "pass"
+    elif token_coverage < 0.7 or ngram_overlap < 0.4:
+        decision = "retry"
+    else:
+        decision = "log"
+
+    return {
+        "token_coverage": token_coverage,
+        "ngram_overlap": ngram_overlap,
+        "decision": decision,
+    }
+
 
 def cleanup_cycle(
     batch,
@@ -42,13 +103,17 @@ def cleanup_cycle(
     chunk_table,
     flush_batch=False,
     pending_futures=None,
+    prefetched_text=None,
+    append_to_batch=True,
 ):
     """
     Fetch the current response, optionally flush the batch, then hard-refresh and reset
     devtools/clipboard to keep the browser snappy.
     """
-    extracted_text = get_code_from_devtools()
-    if extracted_text:
+    extracted_text = (
+        prefetched_text if prefetched_text is not None else get_code_from_devtools()
+    )
+    if append_to_batch and extracted_text:
         batch.append(extracted_text)
 
     if flush_batch and batch:
@@ -76,6 +141,7 @@ def cleanup_cycle(
         time.sleep(0.5)
         pyautogui.click()
         print("Antwort gespeichert. Nächster Durchgang...")
+        _write_log("responses.log", "cycle refreshed, response stored")
     pyperclip.copy("")  # free clipboard buffer
     time.sleep(0.5)
     pyautogui.click(x=220, y=1053)
@@ -382,6 +448,11 @@ def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, raw_text
     print(f"Erfolg: {len(rows)} Datensätze in {section_table} eingefügt.")
     print(f"Erfolg: {block_total} Blocks in {block_table} eingefügt.")
     print(f"Erfolg: {chunk_total} Chunks in {chunk_table} eingefügt.")
+    _write_log(
+        "bulk_insert.log",
+        f"{section_table}: sections={len(rows)}, "
+        f"blocks={block_total}, chunks={chunk_total}",
+    )
 
 
 DBS = ["katheer", "waseet", "tabary", "sa3dy", "qortoby", "baghawy"]
@@ -425,6 +496,7 @@ def automate_gemini(db):
             or 0
         )
         total_processed = 0
+        skipped_rows = 0
 
         while True:
             wait_for_pending()
@@ -440,9 +512,13 @@ def automate_gemini(db):
                 print(
                     f"Bereits vollständig: {db} ({saved_rows}/{expected_rows} Einträge)."
                 )
+                _write_log(
+                    "progress.log",
+                    f"{db}: already complete {saved_rows}/{expected_rows}",
+                )
                 break
 
-            start_offset = saved_rows
+            start_offset = saved_rows + skipped_rows
             batch = []
             processed_this_run = 0
 
@@ -455,87 +531,141 @@ def automate_gemini(db):
 
             for row in results:
                 i += 1
-                extracted_text = None
                 original_text = row[0]
                 if not original_text:
                     continue
-                pyperclip.copy(
-                    PROMPT_PREFIX
-                    + " ".join(
-                        original_text.replace("<p>", " ")
-                        .replace("</p>", " ")
-                        .split()
+                attempts = 0
+                while attempts <= GUARD_MAX_RETRIES:
+                    attempts += 1
+                    extracted_text = None
+                    pyperclip.copy(
+                        PROMPT_PREFIX
+                        + " ".join(
+                            original_text.replace("<p>", " ")
+                            .replace("</p>", " ")
+                            .split()
+                        )
                     )
-                )
-                pyautogui.click(x=220, y=1053)  # open browser
+                    pyautogui.click(x=220, y=1053)  # open browser
 
-                # ChatGPT
-                # pyautogui.click(x=597, y=933)
-                # Gemini
-                time.sleep(1.5)
-                pyautogui.hotkey("ctrl", "end")
-                time.sleep(1.0)
+                    # ChatGPT
+                    # pyautogui.click(x=597, y=933)
+                    # Gemini
+                    time.sleep(0.5)
+                    pyautogui.hotkey("ctrl", "end")
+                    time.sleep(1.0)
 
-                # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
-                for _ in range(3):
-                    pyautogui.moveTo(927, 891, duration=0.15)
+                    # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
+                    for _ in range(3):
+                        pyautogui.moveTo(927, 891, duration=0.15)
+                        pyautogui.click()
+                        time.sleep(0.2)
+
+                    # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
+                    pyautogui.hotkey("ctrl", "a")
+                    time.sleep(0.1)
+                    pyautogui.press("backspace")
+                    time.sleep(0.2)
+
+                    # 3. Inhalt einfügen
+                    pyautogui.hotkey("ctrl", "v")
+                    time.sleep(0.6)
+
+                    # 4. Absenden (Enter mehrfach + Delay)
+                    for _ in range(2):
+                        pyautogui.press("enter")
+                        time.sleep(0.2)
+
+                    time.sleep(1.5)
+
+                    print("Warte auf Antwort von Gemini...")
+                    _write_log("progress.log", f"row={i}: waiting for response")
+                    pyautogui.hotkey("ctrl", "shift", "i")
+                    time.sleep(1.5)
+                    pyautogui.moveTo(x=733, y=351, duration=0.15)
                     pyautogui.click()
-                    time.sleep(0.2)
+                    pyautogui.hotkey("ctrl", "end")
+                    time.sleep(2)
+                    pyautogui.moveTo(x=972, y=99, duration=0.15)
+                    pyautogui.click()
 
-                # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
-                pyautogui.hotkey("ctrl", "a")
-                time.sleep(0.1)
-                pyautogui.press("backspace")
-                time.sleep(0.2)
+                    watcher_gemini_response = watcher_a.run()
+                    if watcher_gemini_response is True:
+                        extracted_text = get_code_from_devtools()
 
-                # 3. Inhalt einfügen
-                pyautogui.hotkey("ctrl", "v")
-                time.sleep(0.6)
+                    if not extracted_text:
+                        print(
+                            "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
+                        )
+                        _write_log("progress.log", f"row={i}: no response detected")
+                        break
 
-                # 4. Absenden (Enter mehrfach + Delay)
-                for _ in range(2):
-                    pyautogui.press("enter")
-                    time.sleep(0.2)
+                    guard = evaluate_guard(original_text, extracted_text)
+                    decision = guard["decision"]
+                    print(
+                        f"Guard: coverage={guard['token_coverage']:.2f}, overlap={guard['ngram_overlap']:.2f}, decision={decision}"
+                    )
+                    log_line = (
+                        f"row={i}, decision={decision}, "
+                        f"coverage={guard['token_coverage']:.2f}, "
+                        f"overlap={guard['ngram_overlap']:.2f}"
+                    )
+                    if decision == "retry":
+                        log_line += f", attempt={attempts}"
+                    with open("guard.log", "a", encoding="utf-8") as f:
+                        f.write(log_line + "\n")
 
-                time.sleep(1.5)
+                    if decision == "retry":
+                        if attempts <= GUARD_MAX_RETRIES:
+                            print(
+                                f"Guard verlangt Wiederholung (Versuch {attempts}/{GUARD_MAX_RETRIES + 1})."
+                            )
+                            continue
+                        print(
+                            "Maximale Guard-Versuche erreicht; Eintrag wird übersprungen."
+                        )
+                        with open("guard.log", "a", encoding="utf-8") as f:
+                            f.write(
+                                f"row={i}, decision=skip, reason=guard_limit, "
+                                f"coverage={guard['token_coverage']:.2f}, "
+                                f"overlap={guard['ngram_overlap']:.2f}\n"
+                            )
+                        skipped_rows += 1
+                        processed_this_run += 1
+                        break
 
-                print("Warte auf Antwort von Gemini...")
-                pyautogui.hotkey("ctrl", "shift", "i")
-                time.sleep(1.5)
-                pyautogui.moveTo(x=733, y=351, duration=0.15)
-                pyautogui.click()
-                pyautogui.hotkey("ctrl", "end")
-                time.sleep(2)
-                pyautogui.moveTo(x=972, y=99, duration=0.15)
-                pyautogui.click()
+                    if decision == "log":
+                        print(
+                            "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
+                        )
+                        skipped_rows += 1
+                        processed_this_run += 1
+                        break
 
-                watcher_gemini_response = watcher_a.run()
-                if watcher_gemini_response is True:
+                    batch.append(extracted_text)
+                    processed_this_run += 1
+                    total_processed += 1
+
                     if i % 5 == 0:
-                        extracted_text = cleanup_cycle(
+                        cleanup_cycle(
                             batch,
                             executor,
                             engine_out,
                             target_table,
                             block_table,
                             chunk_table,
-                            flush_batch=i % 5 == 0,
+                            flush_batch=True,
                             pending_futures=pending_futures,
+                            prefetched_text=extracted_text,
+                            append_to_batch=False,
                         )
-                    else:
-                        extracted_text = get_code_from_devtools()
-                        if extracted_text:
-                            batch.append(extracted_text)
 
-                if not extracted_text:
-                    print(
-                        "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
+                    print("Antwort gespeichert. Nächster Durchgang...")
+                    _write_log(
+                        "responses.log",
+                        f"row={i}: response accepted, total_processed={total_processed}",
                     )
                     break
-
-                processed_this_run += 1
-                total_processed += 1
-                print("Antwort gespeichert. Nächster Durchgang...")
 
             if batch:
                 pending_futures.append(
@@ -553,17 +683,22 @@ def automate_gemini(db):
                 print(
                     "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
                 )
+                _write_log(
+                    "progress.log",
+                    f"{db}: no additional records processed this run",
+                )
                 break
 
         wait_for_pending()
 
     with engine_out.connect() as out_conn:
         final_saved_rows = (
-            out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar()
-            or 0
+            out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar() or 0
         )
-    print(
-        f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel)."
+    print(f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel).")
+    _write_log(
+        "progress.log",
+        f"{db}: finished {final_saved_rows}/{expected_rows} entries stored",
     )
 
 
