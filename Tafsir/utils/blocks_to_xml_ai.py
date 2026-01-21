@@ -55,6 +55,8 @@ GUARD_MAX_RETRIES = 2
 def _normalize_guard_tokens(text):
     if not text:
         return []
+    if isinstance(text, list):
+        text = " ".join(text)
     no_tags = regex.sub(r"<[^>]+>", " ", text)
     normalized = " ".join(no_tags.split()).lower()
     if not normalized:
@@ -77,7 +79,7 @@ def evaluate_guard(source_text, response_text, n=GUARD_NGRAM_SIZE):
     source_tokens = _normalize_guard_tokens(source_text)
     response_tokens = _normalize_guard_tokens(response_text)
 
-    if not source_tokens or not response_tokens:
+    if not source_tokens or not response_tokens or []:
         return {"token_coverage": 0.0, "ngram_overlap": 0.0, "decision": "retry"}
 
     response_set = set(response_tokens)
