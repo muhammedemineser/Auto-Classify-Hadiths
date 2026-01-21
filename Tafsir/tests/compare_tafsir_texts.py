@@ -9,6 +9,7 @@ from typing import List, Tuple
 import regex
 import unicodedata
 
+RX_PREFIX_STANDALONE = regex.compile(r"(?<!\S)(و|ف|ب|ك|ل|س|لي)\s+(?=\S)", regex.UNICODE)
 
 TAG_RE = re.compile(r"<[^>]+>")
 
@@ -68,6 +69,8 @@ def normalize_arabic(text: str) -> str:
     # 6) Leerzeichen normalisieren
     text = MULTI_SPACE.sub(" ", text).strip()
 
+    text = RX_PREFIX_STANDALONE.sub(r"\1", text)
+
     # 7) Finale Unicode-Rekomposition
     text = unicodedata.normalize("NFKC", text)
 
@@ -93,15 +96,35 @@ def compare_sequences(src_words: List[str], ann_words: List[str]) -> List[str]:
         if tag == "equal":
             continue
 
-        src = " ".join(src_words[i1:i2])
-        ann = " ".join(ann_words[j1:j2])
-
         if tag == "delete":
-            diffs.append(f"Missing words: '{src}'")
+            src_ctx_before = src_words[i1 - 1 : i1] if i1 > 0 else []
+            src_ctx_after = src_words[i2 : i2 + 1]
+
+            diffs.append(
+                f"Missing words: "
+                f"'{' '.join(src_ctx_before + [f'<<{w}>>' for w in src_words[i1:i2]] + src_ctx_after)}'"
+            )
+
         elif tag == "insert":
-            diffs.append(f"Extra words: '{ann}'")
+            ann_ctx_before = ann_words[j1 - 1 : j1] if j1 > 0 else []
+            ann_ctx_after = ann_words[j2 : j2 + 1]
+
+            diffs.append(
+                f"Extra words: "
+                f"'{' '.join(ann_ctx_before + [f'<<{w}>>' for w in ann_words[j1:j2]] + ann_ctx_after)}'"
+            )
+
         elif tag == "replace":
-            diffs.append(f"Order/divergence mismatch: '{src}' -> '{ann}'")
+            src_ctx_before = src_words[i1 - 1 : i1] if i1 > 0 else []
+            src_ctx_after = src_words[i2 : i2 + 1]
+            ann_ctx_before = ann_words[j1 - 1 : j1] if j1 > 0 else []
+            ann_ctx_after = ann_words[j2 : j2 + 1]
+
+            diffs.append(
+                f"Order/divergence mismatch: "
+                f"'{' '.join(src_ctx_before + [f'<<{w}>>' for w in src_words[i1:i2]] + src_ctx_after)}' -> "
+                f"'{' '.join(ann_ctx_before + [f'<<{w}>>' for w in ann_words[j1:j2]] + ann_ctx_after)}'"
+            )
 
     return diffs
 

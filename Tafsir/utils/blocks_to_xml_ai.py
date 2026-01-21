@@ -8,13 +8,25 @@ from sqlalchemy import MetaData, Table, create_engine, select, text
 from ocr import OCRWatcher
 from PROMPT_PREFIX import PROMPT_PREFIX
 from TAGS import PRIMARY_TAGS, SECONDARY_TAGS, REMAINING_ALL_TAGS
+from pathlib import Path
 
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
 def _write_log(path, entry):
-    with open(path, "a", encoding="utf-8") as f:
+    log_path = Path(path).expanduser()
+    if log_path.is_absolute():
+        anchor = log_path.anchor
+        if anchor:
+            log_path = log_path.relative_to(anchor)
+    target_path = REPO_ROOT / log_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(target_path, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
+
 
 ALL_TAGS = (
     list(PRIMARY_TAGS.keys())
@@ -141,7 +153,7 @@ def cleanup_cycle(
         time.sleep(0.5)
         pyautogui.click()
         print("Antwort gespeichert. Nächster Durchgang...")
-        _write_log("responses.log", "cycle refreshed, response stored")
+        _write_log("logs/responses.log", "cycle refreshed, response stored")
     pyperclip.copy("")  # free clipboard buffer
     time.sleep(0.5)
     pyautogui.click(x=220, y=1053)
@@ -449,7 +461,7 @@ def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, raw_text
     print(f"Erfolg: {block_total} Blocks in {block_table} eingefügt.")
     print(f"Erfolg: {chunk_total} Chunks in {chunk_table} eingefügt.")
     _write_log(
-        "bulk_insert.log",
+        "logs/bulk_insert.log",
         f"{section_table}: sections={len(rows)}, "
         f"blocks={block_total}, chunks={chunk_total}",
     )
@@ -513,7 +525,7 @@ def automate_gemini(db):
                     f"Bereits vollständig: {db} ({saved_rows}/{expected_rows} Einträge)."
                 )
                 _write_log(
-                    "progress.log",
+                    "logs/progress.log",
                     f"{db}: already complete {saved_rows}/{expected_rows}",
                 )
                 break
@@ -579,7 +591,7 @@ def automate_gemini(db):
                     time.sleep(1.5)
 
                     print("Warte auf Antwort von Gemini...")
-                    _write_log("progress.log", f"row={i}: waiting for response")
+                    _write_log("logs/progress.log", f"row={i}: waiting for response")
                     pyautogui.hotkey("ctrl", "shift", "i")
                     time.sleep(1.5)
                     pyautogui.moveTo(x=733, y=351, duration=0.15)
@@ -597,7 +609,9 @@ def automate_gemini(db):
                         print(
                             "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
                         )
-                        _write_log("progress.log", f"row={i}: no response detected")
+                        _write_log(
+                            "logs/progress.log", f"row={i}: no response detected"
+                        )
                         break
 
                     guard = evaluate_guard(original_text, extracted_text)
@@ -612,8 +626,7 @@ def automate_gemini(db):
                     )
                     if decision == "retry":
                         log_line += f", attempt={attempts}"
-                    with open("guard.log", "a", encoding="utf-8") as f:
-                        f.write(log_line + "\n")
+                    _write_log("logs/guard.log", log_line)
 
                     if decision == "retry":
                         if attempts <= GUARD_MAX_RETRIES:
@@ -624,12 +637,12 @@ def automate_gemini(db):
                         print(
                             "Maximale Guard-Versuche erreicht; Eintrag wird übersprungen."
                         )
-                        with open("guard.log", "a", encoding="utf-8") as f:
-                            f.write(
-                                f"row={i}, decision=skip, reason=guard_limit, "
-                                f"coverage={guard['token_coverage']:.2f}, "
-                                f"overlap={guard['ngram_overlap']:.2f}\n"
-                            )
+                        _write_log(
+                            "logs/guard.log",
+                            f"row={i}, decision=skip, reason=guard_limit, "
+                            f"coverage={guard['token_coverage']:.2f}, "
+                            f"overlap={guard['ngram_overlap']:.2f}",
+                        )
                         skipped_rows += 1
                         processed_this_run += 1
                         break
@@ -662,7 +675,7 @@ def automate_gemini(db):
 
                     print("Antwort gespeichert. Nächster Durchgang...")
                     _write_log(
-                        "responses.log",
+                        "logs/responses.log",
                         f"row={i}: response accepted, total_processed={total_processed}",
                     )
                     break
@@ -684,7 +697,7 @@ def automate_gemini(db):
                     "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
                 )
                 _write_log(
-                    "progress.log",
+                    "logs/progress.log",
                     f"{db}: no additional records processed this run",
                 )
                 break
@@ -697,7 +710,7 @@ def automate_gemini(db):
         )
     print(f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel).")
     _write_log(
-        "progress.log",
+        "logs/progress.log",
         f"{db}: finished {final_saved_rows}/{expected_rows} entries stored",
     )
 
