@@ -41,6 +41,7 @@ def cleanup_cycle(
     block_table,
     chunk_table,
     flush_batch=False,
+    pending_futures=None,
 ):
     """
     Fetch the current response, optionally flush the batch, then hard-refresh and reset
@@ -51,7 +52,7 @@ def cleanup_cycle(
         batch.append(extracted_text)
 
     if flush_batch and batch:
-        executor.submit(
+        future = executor.submit(
             bulk_insert_tafsir,
             engine_out,
             section_table,
@@ -59,6 +60,8 @@ def cleanup_cycle(
             chunk_table,
             list(batch),
         )
+        if pending_futures is not None:
+            pending_futures.append(future)
         batch.clear()
 
     pyautogui.click(x=220, y=1053)
@@ -402,99 +405,166 @@ def automate_gemini(db):
     block_table = f"{target_table}_blocks"
     chunk_table = f"{target_table}_chunks"
     setup_analysis_tables(engine_out, target_table, block_table, chunk_table)
+    pending_futures = []
+
+    def wait_for_pending():
+        for future in pending_futures:
+            future.result()
+        pending_futures.clear()
 
     with engine_in.connect() as connection, ThreadPoolExecutor(
         max_workers=4
     ) as executor:
-        results = connection.execute(select(tafsir_table.c.text))
-        batch = []
-
-        for row in results:
-            i += 1
-            extracted_text = None
-            original_text = row[0]
-            if not original_text:
-                continue
-            pyperclip.copy(
-                PROMPT_PREFIX
-                + " ".join(
-                    original_text.replace("<p>", " ").replace("</p>", " ").split()
+        expected_rows = (
+            connection.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {db} "
+                    "WHERE text IS NOT NULL AND text != ''"
                 )
+            ).scalar()
+            or 0
+        )
+        total_processed = 0
+
+        while True:
+            wait_for_pending()
+            with engine_out.connect() as out_conn:
+                saved_rows = (
+                    out_conn.execute(
+                        text(f"SELECT COUNT(*) FROM {target_table}")
+                    ).scalar()
+                    or 0
+                )
+
+            if saved_rows >= expected_rows:
+                print(
+                    f"Bereits vollständig: {db} ({saved_rows}/{expected_rows} Einträge)."
+                )
+                break
+
+            start_offset = saved_rows
+            batch = []
+            processed_this_run = 0
+
+            results = connection.execute(
+                select(tafsir_table.c.text)
+                .where(text("text IS NOT NULL AND text != ''"))
+                .order_by(text("rowid"))
+                .offset(start_offset)
             )
-            pyautogui.click(x=220, y=1053)  # open browser
 
-            # ChatGPT
-            # pyautogui.click(x=597, y=933)
-            # Gemini
-            time.sleep(1.5)
-            pyautogui.hotkey("ctrl", "end")
-            time.sleep(1.0)
+            for row in results:
+                i += 1
+                extracted_text = None
+                original_text = row[0]
+                if not original_text:
+                    continue
+                pyperclip.copy(
+                    PROMPT_PREFIX
+                    + " ".join(
+                        original_text.replace("<p>", " ")
+                        .replace("</p>", " ")
+                        .split()
+                    )
+                )
+                pyautogui.click(x=220, y=1053)  # open browser
 
-            # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
-            for _ in range(3):
-                pyautogui.moveTo(927, 891, duration=0.15)
+                # ChatGPT
+                # pyautogui.click(x=597, y=933)
+                # Gemini
+                time.sleep(1.5)
+                pyautogui.hotkey("ctrl", "end")
+                time.sleep(1.0)
+
+                # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
+                for _ in range(3):
+                    pyautogui.moveTo(927, 891, duration=0.15)
+                    pyautogui.click()
+                    time.sleep(0.2)
+
+                # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
+                pyautogui.hotkey("ctrl", "a")
+                time.sleep(0.1)
+                pyautogui.press("backspace")
+                time.sleep(0.2)
+
+                # 3. Inhalt einfügen
+                pyautogui.hotkey("ctrl", "v")
+                time.sleep(0.6)
+
+                # 4. Absenden (Enter mehrfach + Delay)
+                for _ in range(2):
+                    pyautogui.press("enter")
+                    time.sleep(0.2)
+
+                time.sleep(1.5)
+
+                print("Warte auf Antwort von Gemini...")
+                pyautogui.hotkey("ctrl", "shift", "i")
+                time.sleep(1.5)
+                pyautogui.moveTo(x=733, y=351, duration=0.15)
                 pyautogui.click()
-                time.sleep(0.2)
+                pyautogui.hotkey("ctrl", "end")
+                time.sleep(2)
+                pyautogui.moveTo(x=972, y=99, duration=0.15)
+                pyautogui.click()
 
-            # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
-            pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.1)
-            pyautogui.press("backspace")
-            time.sleep(0.2)
+                watcher_gemini_response = watcher_a.run()
+                if watcher_gemini_response is True:
+                    if i % 5 == 0:
+                        extracted_text = cleanup_cycle(
+                            batch,
+                            executor,
+                            engine_out,
+                            target_table,
+                            block_table,
+                            chunk_table,
+                            flush_batch=i % 5 == 0,
+                            pending_futures=pending_futures,
+                        )
+                    else:
+                        extracted_text = get_code_from_devtools()
+                        if extracted_text:
+                            batch.append(extracted_text)
 
-            # 3. Inhalt einfügen
-            pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.6)
+                if not extracted_text:
+                    print(
+                        "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
+                    )
+                    break
 
-            # 4. Absenden (Enter mehrfach + Delay)
-            for _ in range(2):
-                pyautogui.press("enter")
-                time.sleep(0.2)
+                processed_this_run += 1
+                total_processed += 1
+                print("Antwort gespeichert. Nächster Durchgang...")
 
-            time.sleep(1.5)
-
-            print("Warte auf Antwort von Gemini...")
-            pyautogui.hotkey("ctrl", "shift", "i")
-            time.sleep(1.5)
-            pyautogui.moveTo(x=733, y=351, duration=0.15)
-            pyautogui.click()
-            pyautogui.hotkey("ctrl", "end")
-            time.sleep(2)
-            pyautogui.moveTo(x=972, y=99, duration=0.15)
-            pyautogui.click()
-
-            watcher_gemini_response = watcher_a.run()
-            if watcher_gemini_response is True:
-                if i % 5 == 0:
-                    extracted_text = cleanup_cycle(
-                        batch,
-                        executor,
+            if batch:
+                pending_futures.append(
+                    executor.submit(
+                        bulk_insert_tafsir,
                         engine_out,
                         target_table,
                         block_table,
                         chunk_table,
-                        flush_batch=i % 5 == 0,
+                        list(batch),
                     )
-                else:
-                    extracted_text = get_code_from_devtools()
-                    if extracted_text:
-                        batch.append(extracted_text)
+                )
 
-            if not extracted_text:
-                print("Kein Code gefunden.")
+            if processed_this_run == 0:
+                print(
+                    "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
+                )
                 break
 
-            print("Antwort gespeichert. Nächster Durchgang...")
+        wait_for_pending()
 
-        if batch:
-            executor.submit(
-                bulk_insert_tafsir,
-                engine_out,
-                target_table,
-                block_table,
-                chunk_table,
-                list(batch),
-            )
+    with engine_out.connect() as out_conn:
+        final_saved_rows = (
+            out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar()
+            or 0
+        )
+    print(
+        f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel)."
+    )
 
 
 if __name__ == "__main__":
