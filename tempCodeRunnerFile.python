@@ -1,0 +1,34 @@
+import sqlite3
+
+db_path = "/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books_annotated/katheer_annotated.sqlite3"
+
+def delete_tafsir_entries(path, start_id):
+    try:
+        # Verbindung zur Datenbank herstellen
+        conn = sqlite3.connect(path)
+        cursor = conn.cursor()
+
+        # WICHTIG: Foreign Keys in SQLite aktivieren (muss pro Verbindung erfolgen)
+        cursor.execute("PRAGMA foreign_keys = ON;")
+
+        # SQL-Befehl zum Löschen
+        # Wenn die Tabellen mit 'ON DELETE CASCADE' definiert wurden, 
+        # werden alle verknüpften Kind-Elemente automatisch mitgelöscht.
+        sql = "DELETE FROM tafsir_analysis_katheer WHERE id > ?"
+        
+        cursor.execute(sql, (start_id,))
+        
+        deleted_count = cursor.rowcount
+        conn.commit()
+        
+        print(f"Erfolg: {deleted_count} Zeilen und deren Verknüpfungen wurden gelöscht.")
+
+    except sqlite3.Error as e:
+        print(f"Ein Fehler ist aufgetreten: {e}")
+    
+    finally:
+        if conn:
+            conn.close()
+
+if __name__ == "__main__":
+    delete_tafsir_entries(db_path, 512)
