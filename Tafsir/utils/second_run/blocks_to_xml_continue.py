@@ -470,9 +470,16 @@ def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, raw_text
 
 
 DBS = ["katheer", "waseet", "tabary", "sa3dy", "qortoby", "baghawy"]
+DEFAULT_START_ID = 149
 
 
-def automate_gemini(db):
+def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
+    """
+    Default: verarbeitet alle Zeilen ab ``start_id`` (inkl.) wie bisher.
+    Neu: Wenn ``exact_ids`` angegeben ist, werden ausschließlich diese IDs
+    (einzeln) abgearbeitet – nützlich für gezielte Nachträge / Rollbacks.
+    """
+
     i = 0
     db_path_in = (
         f"/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books/{db}.sqlite3"
@@ -501,65 +508,27 @@ def automate_gemini(db):
         max_workers=4
     ) as executor:
         # Initialen Stand der Zieltabelle abrufen, um den Offset korrekt zu berechnen
-        # (Behebt das Problem, dass existierende Zeilen, die nicht zum ID>=149 Filter gehören, den Offset verschieben)
+        # (Behebt das Problem, dass existierende Zeilen, die nicht zum ID-Filter gehören, den Offset verschieben)
         with engine_out.connect() as out_conn:
             initial_out_count = (
                 out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar()
                 or 0
             )
 
-        expected_rows = (
-            connection.execute(
-                text(
-                    f"SELECT COUNT(*) FROM {db} "
-                    "WHERE id >= 149 AND text IS NOT NULL AND text != ''"
-                )
-            ).scalar()
-            or 0
-        )
         total_processed = 0
         skipped_rows = 0
 
-        while True:
-            wait_for_pending()
-            with engine_out.connect() as out_conn:
-                saved_rows = (
-                    out_conn.execute(
-                        text(f"SELECT COUNT(*) FROM {target_table}")
-                    ).scalar()
-                    or 0
-                )
-
-            # Berechne die Anzahl der in DIESER Sitzung (oder passend zum Filter) verarbeiteten Zeilen
-            effective_processed_count = max(0, saved_rows - initial_out_count)
-
-            if effective_processed_count >= expected_rows:
-                print(
-                    f"Bereits vollständig: {db} ({effective_processed_count}/{expected_rows} Einträge in diesem Lauf)."
-                )
-                _write_log(
-                    "logs/progress.log",
-                    f"{db}: already complete {effective_processed_count}/{expected_rows}",
-                )
-                break
-
-            # Der Offset basiert nun nur auf den neu hinzugefügten + übersprungenen Zeilen
-            start_offset = effective_processed_count + skipped_rows
+        def process_rows(rows_iterable):
+            nonlocal i, total_processed, skipped_rows
             batch = []
-            processed_this_run = 0
+            processed = 0
 
-            results = connection.execute(
-                select(tafsir_table.c.text)
-                .where(text("id >= 149 AND text IS NOT NULL AND text != ''"))
-                .order_by(text("id"))
-                .offset(start_offset)
-            )
-
-            for row in results:
+            for row in rows_iterable:
                 i += 1
                 original_text = row[0]
                 if not original_text:
                     continue
+
                 attempts = 0
                 while attempts <= GUARD_MAX_RETRIES:
                     attempts += 1
@@ -658,7 +627,7 @@ def automate_gemini(db):
                             f"overlap={guard['ngram_overlap']:.2f}",
                         )
                         skipped_rows += 1
-                        processed_this_run += 1
+                        processed += 1
                         break
 
                     if decision == "log":
@@ -666,11 +635,11 @@ def automate_gemini(db):
                             "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
                         )
                         skipped_rows += 1
-                        processed_this_run += 1
+                        processed += 1
                         break
 
                     batch.append(extracted_text)
-                    processed_this_run += 1
+                    processed += 1
                     total_processed += 1
 
                     if i % 5 == 0:
@@ -706,6 +675,92 @@ def automate_gemini(db):
                     )
                 )
 
+            return processed
+
+        # --- Modus 1: gezielte Einzel-IDs ----------------------------------
+        if exact_ids:
+            ids = sorted({int(x) for x in exact_ids})
+            rows_to_process = []
+            with engine_out.connect() as out_conn:
+                for target_id in ids:
+                    already = out_conn.execute(
+                        text(f"SELECT 1 FROM {target_table} WHERE id = :id"),
+                        {"id": target_id},
+                    ).fetchone()
+                    if already:
+                        print(f"Überspringe ID {target_id}: bereits vorhanden.")
+                        continue
+
+                    row = connection.execute(
+                        select(tafsir_table.c.text)
+                        .where(text("text IS NOT NULL AND text != ''"))
+                        .where(tafsir_table.c.id == target_id)
+                    ).fetchone()
+
+                    if row:
+                        rows_to_process.append(row)
+                    else:
+                        print(f"Keine Quellzeile für ID {target_id} gefunden – übersprungen.")
+
+            processed = process_rows(rows_to_process)
+            wait_for_pending()
+            print(
+                f"Einzelmodus: {processed}/{len(rows_to_process)} IDs verarbeitet (db={db})."
+            )
+            _write_log(
+                "logs/progress.log",
+                f"{db}: single_ids processed={processed}, requested={len(rows_to_process)}",
+            )
+            return
+
+        # --- Modus 2: normaler Sequenzlauf ab start_id ----------------------
+        expected_rows = (
+            connection.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {db} "
+                    "WHERE id >= :start_id AND text IS NOT NULL AND text != ''"
+                ),
+                {"start_id": start_id},
+            ).scalar()
+            or 0
+        )
+
+        while True:
+            wait_for_pending()
+            with engine_out.connect() as out_conn:
+                saved_rows = (
+                    out_conn.execute(
+                        text(f"SELECT COUNT(*) FROM {target_table}")
+                    ).scalar()
+                    or 0
+                )
+
+            # Berechne die Anzahl der in DIESER Sitzung (oder passend zum Filter) verarbeiteten Zeilen
+            effective_processed_count = max(0, saved_rows - initial_out_count)
+
+            if effective_processed_count >= expected_rows:
+                print(
+                    f"Bereits vollständig: {db} ({effective_processed_count}/{expected_rows} Einträge in diesem Lauf)."
+                )
+                _write_log(
+                    "logs/progress.log",
+                    f"{db}: already complete {effective_processed_count}/{expected_rows}",
+                )
+                break
+
+            # Der Offset basiert nun nur auf den neu hinzugefügten + übersprungenen Zeilen
+            start_offset = effective_processed_count + skipped_rows
+
+            results = connection.execute(
+                select(tafsir_table.c.text)
+                .where(text("id >= :start_id AND text IS NOT NULL AND text != ''"))
+                .order_by(text("id"))
+                .offset(start_offset)
+                .params(start_id=start_id)
+            )
+
+            processed_this_run = process_rows(results)
+
             if processed_this_run == 0:
                 print(
                     "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
@@ -730,8 +785,38 @@ def automate_gemini(db):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Automatisierte Tafsir-Annotation (Gemini/Blocks)."
+    )
+    parser.add_argument(
+        "--db",
+        dest="dbs",
+        action="append",
+        choices=DBS,
+        help="Nur diese DB verarbeiten (kann mehrfach angegeben werden)."
+        " Ohne Angabe werden alle verarbeitet.",
+    )
+    parser.add_argument(
+        "--start-id",
+        type=int,
+        default=DEFAULT_START_ID,
+        help="Start-ID für den normalen Lauf (Standard: 149).",
+    )
+    parser.add_argument(
+        "--exact-id",
+        dest="exact_ids",
+        action="append",
+        type=int,
+        help="Nur die angegebenen IDs verarbeiten (kann mehrfach angegeben werden).",
+    )
+
+    args = parser.parse_args()
+    targets = args.dbs or DBS
+
     try:
-        for db_name in DBS:
-            automate_gemini(db_name)
+        for db_name in targets:
+            automate_gemini(db_name, start_id=args.start_id, exact_ids=args.exact_ids)
     except KeyboardInterrupt:
         print("\nAbgebrochen durch Benutzer.")

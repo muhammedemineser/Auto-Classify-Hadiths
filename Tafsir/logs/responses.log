@@ -458,3 +458,10 @@ row=726: response accepted, total_processed=375
 row=727: response accepted, total_processed=376
 row=728: response accepted, total_processed=377
 row=729: response accepted, total_processed=378
+row=1: response accepted, total_processed=1
+row=2: response accepted, total_processed=2
+row=3: response accepted, total_processed=3
+row=4: response accepted, total_processed=4
+cycle refreshed, response stored
+row=5: response accepted, total_processed=5
+row=7: response accepted, total_processed=6

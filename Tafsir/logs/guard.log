@@ -413,3 +413,11 @@ row=727, decision=retry, coverage=0.00, overlap=0.00, attempt=1
 row=727, decision=pass, coverage=0.99, overlap=0.98
 row=728, decision=pass, coverage=1.00, overlap=1.00
 row=729, decision=pass, coverage=1.00, overlap=1.00
+row=1, decision=pass, coverage=1.00, overlap=1.00
+row=2, decision=pass, coverage=1.00, overlap=1.00
+row=3, decision=pass, coverage=1.00, overlap=1.00
+row=4, decision=pass, coverage=1.00, overlap=1.00
+row=5, decision=pass, coverage=1.00, overlap=0.99
+row=7, decision=pass, coverage=1.00, overlap=1.00
+row=8, decision=retry, coverage=0.23, overlap=0.00, attempt=1
+row=8, decision=retry, coverage=0.00, overlap=0.00, attempt=2
