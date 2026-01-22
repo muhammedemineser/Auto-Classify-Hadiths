@@ -171,7 +171,7 @@ def get_code_from_devtools():
     pyperclip.copy(search_term)
     pyautogui.hotkey("ctrl", "v")
     time.sleep(1)
-    pyautogui.moveTo(x=1420, y=975)  # go first
+    pyautogui.moveTo(x=1699, y=969)  # go first
     time.sleep(0.5)
     pyautogui.click()
     pyautogui.moveTo(x=814, y=124, duration=0.15)
@@ -500,6 +500,14 @@ def automate_gemini(db):
     with engine_in.connect() as connection, ThreadPoolExecutor(
         max_workers=4
     ) as executor:
+        # Initialen Stand der Zieltabelle abrufen, um den Offset korrekt zu berechnen
+        # (Behebt das Problem, dass existierende Zeilen, die nicht zum ID>=149 Filter gehören, den Offset verschieben)
+        with engine_out.connect() as out_conn:
+            initial_out_count = (
+                out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar()
+                or 0
+            )
+
         expected_rows = (
             connection.execute(
                 text(
@@ -522,17 +530,21 @@ def automate_gemini(db):
                     or 0
                 )
 
-            if saved_rows >= expected_rows:
+            # Berechne die Anzahl der in DIESER Sitzung (oder passend zum Filter) verarbeiteten Zeilen
+            effective_processed_count = max(0, saved_rows - initial_out_count)
+
+            if effective_processed_count >= expected_rows:
                 print(
-                    f"Bereits vollständig: {db} ({saved_rows}/{expected_rows} Einträge)."
+                    f"Bereits vollständig: {db} ({effective_processed_count}/{expected_rows} Einträge in diesem Lauf)."
                 )
                 _write_log(
                     "logs/progress.log",
-                    f"{db}: already complete {saved_rows}/{expected_rows}",
+                    f"{db}: already complete {effective_processed_count}/{expected_rows}",
                 )
                 break
 
-            start_offset = saved_rows + skipped_rows
+            # Der Offset basiert nun nur auf den neu hinzugefügten + übersprungenen Zeilen
+            start_offset = effective_processed_count + skipped_rows
             batch = []
             processed_this_run = 0
 
@@ -710,10 +722,10 @@ def automate_gemini(db):
         final_saved_rows = (
             out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar() or 0
         )
-    print(f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel).")
+    print(f"Abgeschlossen: {db} ({final_saved_rows} Einträge total im Ziel).")
     _write_log(
         "logs/progress.log",
-        f"{db}: finished {final_saved_rows}/{expected_rows} entries stored",
+        f"{db}: finished {final_saved_rows} entries stored",
     )
 
 

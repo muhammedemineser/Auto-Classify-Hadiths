@@ -37,3 +37,5 @@ STRIKTE REGELN FÜR DIE AUSGABE:
 In meiner Nachricht die ich an dich sende, ist der Abschnitt einer Koranexegese:
 
 """
+
+print(len(PROMPT_PREFIX.strip()))

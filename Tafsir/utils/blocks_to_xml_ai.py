@@ -13,18 +13,10 @@ from pathlib import Path
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
-def _write_log(path, entry):
-    log_path = Path(path).expanduser()
-    if log_path.is_absolute():
-        anchor = log_path.anchor
-        if anchor:
-            log_path = log_path.relative_to(anchor)
-    target_path = REPO_ROOT / log_path
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(target_path, "a", encoding="utf-8") as f:
+def _write_log(entry):
+    log_file = Path.cwd() / "log.txt"
+    with log_file.open("a", encoding="utf-8") as f:
         f.write(entry + "\n")
 
 
