@@ -1,0 +1,5 @@
+*.pyc
+*shm
+*wal
+__pycache__/*
+.env
