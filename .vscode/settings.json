@@ -1,4 +1,24 @@
 {
   "python-envs.defaultEnvManager": "ms-python.python:venv",
-  "python-envs.pythonProjects": []
+  "python-envs.pythonProjects": [],
+
+  // Use project venv for all VSCode Python actions
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  // Load env vars (incl. PYTHONPATH and API keys) for debugger and run actions
+  "python.envFile": "${workspaceFolder}/.env",
+  // Make the repo root visible to the language server for package resolution
+  "python.analysis.extraPaths": ["${workspaceFolder}"],
+
+  // Ensure VS Code terminals know the workspace path for shell var expansion
+  "terminal.integrated.env.linux": {
+    "workspaceFolder": "${workspaceFolder}",
+    "WORKSPACE_FOLDER": "${workspaceFolder}"
+  },
+
+  // VSCode Python -m runner extension (极速运行增强插件) configuration
+  "pyrun.pythonPath": "${workspaceFolder}/.venv/bin/python",
+  "pyrun.saveBeforeRun": true,
+  "pyrun.enableContextMenu": true,
+  "pyrun.enableEditorButton": true,
+  "pyrun.enableRunMenu": true
 }

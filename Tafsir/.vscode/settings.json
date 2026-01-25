@@ -1,4 +1,20 @@
 {
   "python-envs.defaultEnvManager": "ms-python.python:pipenv",
-  "python-envs.pythonProjects": []
+  "python-envs.pythonProjects": [],
+
+  // Use project venv from repo root (shared across subfolders)
+  "python.defaultInterpreterPath": "${workspaceFolder}/../.venv/bin/python",
+  // Load root env vars for debugging/running
+  "python.envFile": "${workspaceFolder}/../.env",
+  // Help language server resolve top-level package imports
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/.."
+  ],
+
+  // VSCode Python -m runner extension (极速运行增强插件) configuration
+  "pyrun.pythonPath": "${workspaceFolder}/../.venv/bin/python",
+  "pyrun.saveBeforeRun": true,
+  "pyrun.enableContextMenu": true,
+  "pyrun.enableEditorButton": true,
+  "pyrun.enableRunMenu": true
 }

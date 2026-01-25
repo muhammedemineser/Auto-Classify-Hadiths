@@ -1,1 +1,2 @@
-# Utilities package for tafsir tooling.
+"""Compatibility shims and shared utilities for Tafsir."""
+

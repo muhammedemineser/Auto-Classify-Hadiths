@@ -55,6 +55,14 @@ _OLD_VIRTUAL_PATH="$PATH"
 PATH="$VIRTUAL_ENV/"bin":$PATH"
 export PATH
 
+# Ensure project root is on module search path
+if [ -z "${PYTHONPATH-}" ] ; then
+    PYTHONPATH="/home/muhammed-emin-eser/desk/apps/classify"
+else
+    PYTHONPATH="/home/muhammed-emin-eser/desk/apps/classify:${PYTHONPATH}"
+fi
+export PYTHONPATH
+
 if [ "x"'' != x ] ; then
     VIRTUAL_ENV_PROMPT=''
 else

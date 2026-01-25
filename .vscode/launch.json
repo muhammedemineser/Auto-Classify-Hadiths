@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Rollback Pipeline",
+      "type": "python",
+      "request": "launch",
+      "module": "Tafsir.pipeline.analysis.data_cleaning.rollback_pipeline",
+      "args": ["--jsonl", "Tafsir/logs/fine_diff.jsonl"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Run active file as module (-m)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_active_as_module.py",
+      "args": ["${file}"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Run blocks_to_xml_api via -m (fixed)",
+      "type": "python",
+      "request": "launch",
+      "module": "Tafsir.pipeline.gemini_api.blocks_to_xml_api",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
