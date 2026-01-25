@@ -8,6 +8,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -16,8 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from Tafsir.config import paths as cfg
-from .app_vars import (
+from Tafsir.pipeline.app_vars import (
     SURAH_NAMES,
     TAG_COLORS,
     DEPENDENT_FILTERS,

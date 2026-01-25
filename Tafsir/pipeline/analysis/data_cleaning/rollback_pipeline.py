@@ -20,11 +20,6 @@ from Tafsir.pipeline.analysis import check_divergent_rows
 from Tafsir.pipeline.analysis.compare_tafsir_texts import (
     get_anomalies as compare_anomalies,
 )
-from Tafsir.pipeline.analysis.compare_len_src_ann import (
-    ensure_ann_normalized,
-    ensure_created_at,
-    ensure_src_normalized,
-)
 from Tafsir.pipeline.analysis.data_cleaning import (
     duplicated,
     quran_null,
@@ -923,12 +918,8 @@ class TafsirRollbackPipeline:
                 ),
             )
 
-def run_pipeline(self):
-    print(f"=== Starte Rollback Pipeline für {self.book} ===")
-    ensure_src_normalized(self._src_db_path(), self.book)
-    ensure_ann_normalized(self._ann_db_path(), self._ann_table())
-    ensure_created_at(self._src_db_path(), self.book)
-    ensure_created_at(self._ann_db_path(), self._ann_table())
+    def run_pipeline(self):
+        print(f"=== Starte Rollback Pipeline für {self.book} ===")
         steps = [
             ("ID-Luecken", self.check_id_gaps),
             ("Duplikate", self.check_duplicates),
