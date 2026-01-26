@@ -97,34 +97,25 @@ def test_call_gemini_fix_writes_new_text(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rp.types, "GenerateContentConfig", _FakeConfig)
 
-    # Dummy gemini pipeline helpers
-    class _DummyGeminiMod:
-        ALL_COLUMNS = ["extracted_text_full"]
-
-        @staticmethod
-        def evaluate_guard(src, resp):
-            return {"decision": "pass", "token_coverage": 1.0, "ngram_overlap": 1.0}
-
-        @staticmethod
-        def extract_nested_data(xml):
-            return {"extracted_text_full": xml}
-
-        @staticmethod
-        def extract_section_blocks(xml):
-            return [xml]
-
-        @staticmethod
-        def extract_block_chunks(block_xml, tafsir_block_id):
-            # Minimal chunk shape expected by rollback_pipeline
-            return [
-                {
-                    "tafsir_block_id": tafsir_block_id,
-                    "chunk": block_xml,
-                    "extracted_text_full": block_xml,
-                }
-            ]
-
-    monkeypatch.setattr(rp, "_GEMINI_PIPELINE", _DummyGeminiMod)
+    monkeypatch.setattr(
+        rp,
+        "evaluate_guard",
+        lambda src, resp: {"decision": "pass", "token_coverage": 1.0, "ngram_overlap": 1.0},
+    )
+    monkeypatch.setattr(rp, "extract_nested_data", lambda xml: {"extracted_text_full": xml})
+    monkeypatch.setattr(rp, "extract_section_blocks", lambda xml: [xml])
+    monkeypatch.setattr(
+        rp,
+        "extract_block_chunks",
+        lambda block_xml, tafsir_block_id: [
+            {
+                "tafsir_block_id": tafsir_block_id,
+                "chunk": block_xml,
+                "extracted_text_full": block_xml,
+            }
+        ],
+    )
+    monkeypatch.setattr(rp, "ALL_COLUMNS", ["extracted_text_full"], raising=False)
 
     pipe = rp.TafsirRollbackPipeline(book="katheer", base_path=str(base))
     pipe.regenerate_id(1)

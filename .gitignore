@@ -7,6 +7,5 @@ __pycache__/
 *.pyc
 *.log
 logs/
-
-# NiceGUI / GUI artifacts
-tools/
+.txt
+.env

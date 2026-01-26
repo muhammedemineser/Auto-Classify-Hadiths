@@ -3,8 +3,22 @@ import sys
 import types
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import pytest
 from sqlalchemy import create_engine, text
+
+from Tafsir.pipeline.gemini_common import (
+    ALL_TAGS,
+    RAW_COL,
+    _get_table_columns,
+    _normalize_to_string,
+    extract_block_chunks,
+    extract_nested_data,
+    extract_section_blocks,
+)
 
 
 @pytest.fixture()
@@ -57,15 +71,15 @@ def bx(monkeypatch):
 
 
 def test_extract_nested_data_handles_empty_and_multiple_tags(bx):
-    empty_row = bx.extract_nested_data("")
-    assert empty_row[bx.RAW_COL] == ""
-    assert all(empty_row[tag] is None for tag in bx.ALL_TAGS)
+    empty_row = extract_nested_data("")
+    assert empty_row[RAW_COL] == ""
+    assert all(empty_row[tag] is None for tag in ALL_TAGS)
 
     xml = "<isnad>A</isnad><isnad>B</isnad><hadith>C</hadith>"
-    row = bx.extract_nested_data(xml)
+    row = extract_nested_data(xml)
     assert row["isnad"] == "A\nB"
     assert row["hadith"] == "C"
-    assert row[bx.RAW_COL] == xml
+    assert row[RAW_COL] == xml
 
 
 def test_extract_section_blocks_split_and_fallback(bx):
@@ -73,38 +87,37 @@ def test_extract_section_blocks_split_and_fallback(bx):
         "<tafsir_section_block>One</tafsir_section_block>"
         "<tafsir_section_block>Two</tafsir_section_block>"
     )
-    blocks = bx.extract_section_blocks(xml)
+    blocks = extract_section_blocks(xml)
     assert len(blocks) == 2
     assert all("tafsir_section_block" in b for b in blocks)
 
-    fallback = bx.extract_section_blocks("<p>plain</p>")
+    fallback = extract_section_blocks("<p>plain</p>")
     assert fallback == ["<p>plain</p>"]
-    assert bx.extract_section_blocks("") == []
-    assert bx.extract_section_blocks(None) == []
-
+    assert extract_section_blocks("") == []
+    assert extract_section_blocks(None) == []
 
 def test_extract_block_chunks_handles_chunks_and_fallback(bx):
     block_xml = (
         "<tafsir_chunk><hadith>X</hadith></tafsir_chunk>"
         "<tafsir_chunk><isnad>Y</isnad></tafsir_chunk>"
     )
-    rows = bx.extract_block_chunks(block_xml, 11)
+    rows = extract_block_chunks(block_xml, 11)
     assert len(rows) == 2
     assert all(r["tafsir_block_id"] == 11 for r in rows)
     assert rows[0]["hadith"] == "X"
     assert rows[1]["isnad"] == "Y"
 
-    fallback = bx.extract_block_chunks("no chunks here", 5)
+    fallback = extract_block_chunks("no chunks here", 5)
     assert len(fallback) == 1
     assert fallback[0]["chunk"] == "no chunks here"
-    assert fallback[0][bx.RAW_COL] == "no chunks here"
+    assert fallback[0][RAW_COL] == "no chunks here"
 
-    assert bx.extract_block_chunks("", 9) == []
-    assert bx.extract_block_chunks(None, 9) == []
+    assert extract_block_chunks("", 9) == []
+    assert extract_block_chunks(None, 9) == []
 
 
 def test_walk_deduplicates_nested_tags(bx):
-    row = {tag: None for tag in bx.ALL_TAGS}
+    row = {tag: None for tag in ALL_TAGS}
     xml = "<isnad><isnad>inner</isnad><isnad>inner</isnad></isnad>"
     bx._walk(xml, row)
     assert row["isnad"] == xml
@@ -151,7 +164,7 @@ def test_get_table_columns_and_mapping(bx, tmp_path):
     )
 
     with engine.connect() as conn:
-        cols = bx._get_table_columns(conn, "sections")
+        cols = _get_table_columns(conn, "sections")
         mapping = bx._build_block_id_mapping(conn, "blocks")
 
     assert {"id", "extracted_text_full"}.issubset(set(cols))
@@ -424,3 +437,63 @@ def test_automate_gemini_stops_when_no_extraction(bx, tmp_path, monkeypatch):
     with out_engine.connect() as conn:
         saved = conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar()
     assert saved == 0
+
+
+def _assert_section_block_chunk_relations(
+    engine, section_table, block_table, chunk_table, section_id, raw_xml
+):
+    expected_normalized = _normalize_to_string(raw_xml) or ""
+    with engine.connect() as conn:
+        section = conn.execute(
+            text(f"SELECT id, extracted_text_normalized FROM {section_table} WHERE id = :id"),
+            {"id": section_id},
+        ).mappings().fetchone()
+        assert section is not None
+        assert section["id"] == section_id
+        stored_norm = section["extracted_text_normalized"] or ""
+        assert stored_norm == expected_normalized
+
+        blocks = conn.execute(
+            text(f"SELECT id, tafsir_section_id FROM {block_table}")
+        ).mappings().fetchall()
+        assert blocks
+        assert all(block["tafsir_section_id"] == section_id for block in blocks)
+        block_ids = {block["id"] for block in blocks}
+
+        chunks = conn.execute(
+            text(f"SELECT tafsir_block_id FROM {chunk_table}")
+        ).mappings().fetchall()
+        assert chunks
+        assert all(chunk["tafsir_block_id"] in block_ids for chunk in chunks)
+
+
+def test_gui_bulk_insert_preserves_ids_and_relations(bx, tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path/'gui_relations.sqlite3'}")
+    section_table = "sections"
+    block_table = "blocks"
+    chunk_table = "chunks"
+    bx.setup_analysis_tables(engine, section_table, block_table, chunk_table)
+
+    raw_xml = (
+        "<tafsir_section_block>"
+        "<tafsir_chunk><hadith>Hello</hadith></tafsir_chunk>"
+        "<tafsir_chunk><isnad>World</isnad></tafsir_chunk>"
+        "</tafsir_section_block>"
+    )
+    record_id = 101
+    bx.bulk_insert_tafsir(
+        engine,
+        section_table,
+        block_table,
+        chunk_table,
+        [{"id": record_id, "text": raw_xml}],
+    )
+
+    _assert_section_block_chunk_relations(
+        engine,
+        section_table,
+        block_table,
+        chunk_table,
+        record_id,
+        raw_xml,
+    )

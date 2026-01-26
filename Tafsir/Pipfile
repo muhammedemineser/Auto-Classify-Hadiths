@@ -13,6 +13,8 @@ pyperclip = "*"
 regex = "*"
 sqlalchemy = "*"
 uvicorn = "*"
+duckdb = "*"
+pandas = "*"
 
 [dev-packages]
 pytest = "*"

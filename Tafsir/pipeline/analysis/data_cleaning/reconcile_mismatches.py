@@ -10,7 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import duckdb
 import pandas as pd
 
-from Tafsir.pipeline.gemini_gui.blocks_to_xml_gui import (
+from Tafsir.pipeline.gemini_common import (
     evaluate_guard,
     _normalize_guard_tokens,  # pylint: disable=protected-access
 )

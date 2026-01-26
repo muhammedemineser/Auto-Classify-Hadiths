@@ -5,15 +5,30 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from pathlib import Path
 
-import regex
-from bs4 import BeautifulSoup
 from sqlalchemy import MetaData, Table, create_engine, select, text
 
 from google import genai
 from google.genai import types
 
 from Tafsir.config import paths as cfg
-from .TAGS import PRIMARY_TAGS, SECONDARY_TAGS, REMAINING_ALL_TAGS
+from Tafsir.pipeline.gemini_common import (
+    ALL_COLUMNS,
+    GUARD_MAX_RETRIES,
+    GUARD_MIN_LEN_RATIO,
+    GUARD_NGRAM_SIZE,
+    NORMALIZED_COL,
+    RAW_COL,
+    RX_RECURSIVE,
+    _normalize_guard_tokens,
+    _normalize_to_string,
+    backfill_normalized,
+    clean_wrapped_xml,
+    evaluate_guard,
+    extract_block_chunks,
+    extract_nested_data,
+    extract_section_blocks,
+    insert_empty_section,
+)
 
 
 # When executed as ``python path/to/blocks_to_xml_api.py`` Python sets
@@ -59,28 +74,6 @@ def _write_log(path, entry):
         f.write(entry + "\n")
 
 
-ALL_TAGS = (
-    list(PRIMARY_TAGS.keys())
-    + list(SECONDARY_TAGS.keys())
-    + list(REMAINING_ALL_TAGS.keys())
-)
-RAW_COL = "extracted_text_full"
-NORMALIZED_COL = "extracted_text_normalized"
-ALL_COLUMNS = ALL_TAGS + [RAW_COL]
-
-RX_RECURSIVE = regex.compile(
-    r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*)</(?P=tag)>"
-)
-
-BLOCK_TAG = "tafsir_section_block"
-CHUNK_TAG = "tafsir_chunk"
-RX_BLOCK = regex.compile(rf"(?s)<{BLOCK_TAG}>(?P<content>(?:[^<]|(?R))*)</{BLOCK_TAG}>")
-RX_CHUNK = regex.compile(rf"(?s)<{CHUNK_TAG}>(?P<content>(?:[^<]|(?R))*)</{CHUNK_TAG}>")
-
-GUARD_NGRAM_SIZE = 3
-GUARD_MAX_RETRIES = 2
-GUARD_MIN_LEN_RATIO = 0.5
-
 _GEMINI_CLIENT = None
 _GENAI_TYPES = None
 MODEL_ID = os.getenv("GEMINI_MODEL_ID")
@@ -117,7 +110,6 @@ def request_gemini_response(prompt):
         raise RuntimeError("MODEL_ID ist nicht gesetzt.")
 
     try:
-        # WICHTIG: Im neuen SDK wird der Cache-Name in der Config übergeben
         config = types.GenerateContentConfig(
             cached_content=GEMINI_CACHE_NAME,
         )
@@ -128,107 +120,20 @@ def request_gemini_response(prompt):
             config=config,
         )
 
-        # Debugging: Falls keine Response kommt, schauen wir hier nach:
         if not response.candidates:
-            print(
-                "Keine Antwort generiert (möglicherweise durch Sicherheitsfilter blockiert)."
-            )
-            return None
+            print("Keine Antwort von der Gemini API erhalten; Abbruch.")
+            sys.exit(1)
+
         return response.text
 
     except Exception as e:
-        print(f"Fehler bei der Gemini-Anfrage: {e}")
+        msg = str(e)
+        print(f"Fehler bei der Gemini-Anfrage: {msg}")
+
+        if "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower():
+            sys.exit(130)
+
         return None
-
-
-def _normalize_guard_tokens(text):
-    if not text:
-        return []
-    if isinstance(text, list):
-        text = " ".join(text)
-    no_tags = regex.sub(r"<[^>]+>", " ", text)
-    normalized = " ".join(no_tags.split()).lower()
-    if not normalized:
-        return []
-    return normalized.split()
-
-
-def _normalize_to_string(text):
-    tokens = _normalize_guard_tokens(text)
-    return " ".join(tokens) if tokens else None
-
-
-def _ngram_set(tokens, n):
-    if not tokens:
-        return set()
-    n = max(1, min(n, len(tokens)))
-    return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
-
-
-def _length_ratio(tokens_a, tokens_b):
-    la, lb = len(tokens_a), len(tokens_b)
-    if not la or not lb:
-        return 0.0
-    shorter, longer = (la, lb) if la <= lb else (lb, la)
-    return shorter / longer
-
-
-def evaluate_guard(
-    source_text, response_text, n=GUARD_NGRAM_SIZE, pre_normalized=False
-):
-    """
-    Lightweight guard to detect technical failures (missing/partial/other text).
-    Returns metrics and decision: pass | retry | log.
-    Includes length_ratio (shorter/longer); below GUARD_MIN_LEN_RATIO -> retry.
-    """
-
-    def _to_tokens(val):
-        if pre_normalized:
-            if isinstance(val, list):
-                return val
-            if val is None:
-                return []
-            if isinstance(val, str):
-                return val.split()
-            return list(val)
-        return _normalize_guard_tokens(val)
-
-    source_tokens = _to_tokens(source_text)
-    response_tokens = _to_tokens(response_text)
-
-    if not source_tokens or not response_tokens or []:
-        return {"token_coverage": 0.0, "ngram_overlap": 0.0, "decision": "retry"}
-
-    response_set = set(response_tokens)
-    hits = sum(1 for t in source_tokens if t in response_set)
-    token_coverage = hits / len(source_tokens)
-
-    n = max(1, min(n, len(source_tokens), len(response_tokens)))
-    source_ngrams = _ngram_set(source_tokens, n)
-    response_ngrams = _ngram_set(response_tokens, n)
-    if source_ngrams:
-        ngram_overlap = len(source_ngrams & response_ngrams) / len(source_ngrams)
-    else:
-        ngram_overlap = 0.0
-
-    len_ratio = _length_ratio(source_tokens, response_tokens)
-
-    if token_coverage >= 0.85 and ngram_overlap >= 0.6:
-        decision = "pass"
-    elif token_coverage < 0.7 or ngram_overlap < 0.4:
-        decision = "retry"
-    else:
-        decision = "log"
-
-    if len_ratio < GUARD_MIN_LEN_RATIO:
-        decision = "retry"
-
-    return {
-        "token_coverage": token_coverage,
-        "ngram_overlap": ngram_overlap,
-        "length_ratio": len_ratio,
-        "decision": decision,
-    }
 
 
 def cleanup_cycle(
@@ -281,82 +186,6 @@ def _walk(xml, row):
             row[tag] += "\n" + full
 
         _walk(content, row)
-
-
-def extract_nested_data(xml):
-    """
-    Extracts tags using BeautifulSoup to ensure correct parsing even with nested structures.
-    Populates all columns (ALL_TAGS) found within the XML fragment.
-    """
-    row = {tag: None for tag in ALL_TAGS}
-    if not xml:
-        row[RAW_COL] = xml
-        return row
-
-    soup = BeautifulSoup(xml, "html.parser")
-
-    for tag in ALL_TAGS:
-        elements = soup.find_all(tag)
-        if elements:
-            # Concatenate content if multiple tags of the same type exist
-            row[tag] = "\n".join([e.decode_contents() for e in elements])
-
-    row[RAW_COL] = xml
-    return row
-
-
-def extract_section_blocks(xml):
-    """
-    Parses the XML and returns a list of raw string content for each <tafsir_section_block>.
-    Uses BeautifulSoup to correctly handle the hierarchy.
-    """
-    if not xml:
-        return []
-
-    soup = BeautifulSoup(xml, "html.parser")
-    blocks = soup.find_all(BLOCK_TAG)
-
-    if blocks:
-        return [str(block) for block in blocks]
-
-    # Fallback only if no specific blocks found
-    return [xml]
-
-
-def extract_block_chunks(block_xml, tafsir_block_id):
-    """
-    Extracts <tafsir_chunk> elements from a block string using BeautifulSoup.
-    """
-    if not block_xml:
-        return []
-
-    soup = BeautifulSoup(block_xml, "html.parser")
-    chunks = soup.find_all(CHUNK_TAG)
-
-    chunk_rows = []
-
-    if not chunks:
-        # Fallback: treat the block content as one chunk data point if no explicit chunks are found
-        # but try to extract data columns from the block text itself
-        chunk_data = extract_nested_data(block_xml)
-        chunk_data["tafsir_block_id"] = tafsir_block_id
-        chunk_data["chunk"] = block_xml
-        return [chunk_data]
-
-    for chunk in chunks:
-        chunk_text = str(chunk)
-        # Extract columns (source, hadith, etc.) specifically from this chunk's content
-        chunk_data = extract_nested_data(chunk_text)
-        chunk_data["tafsir_block_id"] = tafsir_block_id
-        chunk_data["chunk"] = chunk_text
-        chunk_rows.append(chunk_data)
-
-    return chunk_rows
-
-
-def _get_table_columns(conn, table_name):
-    result = conn.execute(text(f"PRAGMA table_info('{table_name}')"))
-    return [row[1] for row in result]
 
 
 def _build_block_id_mapping(conn, block_table):
@@ -629,38 +458,6 @@ def repair_analysis_tables(engine_out, section_table, block_table, chunk_table):
         conn.execute(text("PRAGMA foreign_keys=ON"))
 
 
-def backfill_normalized(engine_out, section_table):
-    """
-    Populate the normalized column for rows where it is missing.
-    """
-    with engine_out.begin() as conn:
-        cols = _get_table_columns(conn, section_table)
-        if NORMALIZED_COL not in cols:
-            conn.execute(
-                text(f"ALTER TABLE {section_table} ADD COLUMN {NORMALIZED_COL} TEXT")
-            )
-
-        rows = conn.execute(
-            text(
-                f"SELECT id, {RAW_COL} FROM {section_table} "
-                f"WHERE {NORMALIZED_COL} IS NULL OR {NORMALIZED_COL} = ''"
-            )
-        )
-        updates = []
-        for row in rows:
-            normalized = _normalize_to_string(row[1])
-            updates.append({"id": row[0], "norm": normalized})
-
-        if updates:
-            conn.execute(
-                text(
-                    f"UPDATE {section_table} "
-                    f"SET {NORMALIZED_COL} = :norm WHERE id = :id"
-                ),
-                updates,
-            )
-
-
 def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, records):
     """
     Persist a batch of parsed Tafsir rows.
@@ -854,8 +651,9 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         processed += 1
                         break
 
+                    cleaned_text = clean_wrapped_xml(extracted_text) or extracted_text
                     source_tokens = _normalize_guard_tokens(original_text)
-                    response_tokens = _normalize_guard_tokens(extracted_text)
+                    response_tokens = _normalize_guard_tokens(cleaned_text)
                     guard = evaluate_guard(
                         source_tokens,
                         response_tokens,
@@ -889,6 +687,7 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                             f"coverage={guard['token_coverage']:.2f}, "
                             f"overlap={guard['ngram_overlap']:.2f}",
                         )
+                        insert_empty_section(engine_out, target_table, row_id)
                         skipped_rows += 1
                         processed += 1
                         break
@@ -897,6 +696,7 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         print(
                             "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
                         )
+                        insert_empty_section(engine_out, target_table, row_id)
                         skipped_rows += 1
                         processed += 1
                         break
@@ -906,7 +706,7 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         # kritischer Fix: ID immer aus dem Quell-Korpus übernehmen,
                         # damit Guard-Skips die Alignment nicht verschieben.
                         "id": row_id,
-                        "text": extracted_text,
+                        "text": cleaned_text,
                         NORMALIZED_COL: (
                             " ".join(response_tokens) if response_tokens else None
                         ),

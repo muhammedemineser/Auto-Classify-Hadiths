@@ -5,7 +5,7 @@ from pathlib import Path
 
 try:
     import pyautogui
-except ModuleNotFoundError:  # lightweight stub for test environments
+except Exception:  # lightweight stub for test environments
 
     class _Dummy:
         def __getattr__(self, _):
@@ -26,14 +26,30 @@ except ModuleNotFoundError:  # pragma: no cover - handled by tests
 
     pyperclip = _DummyClip()
 
-import regex
 from bs4 import BeautifulSoup
 from sqlalchemy import MetaData, Table, create_engine, select, text, inspect
 
 from Tafsir.config import paths as cfg
+from Tafsir.pipeline.gemini_common import (
+    ALL_COLUMNS,
+    GUARD_MAX_RETRIES,
+    GUARD_MIN_LEN_RATIO,
+    GUARD_NGRAM_SIZE,
+    NORMALIZED_COL,
+    RAW_COL,
+    RX_RECURSIVE,
+    _normalize_guard_tokens,
+    _normalize_to_string,
+    backfill_normalized,
+    clean_wrapped_xml,
+    evaluate_guard,
+    extract_block_chunks,
+    extract_nested_data,
+    extract_section_blocks,
+    insert_empty_section,
+)
 from .ocr import OCRWatcher
 from .PROMPT_PREFIX import PROMPT_PREFIX
-from .TAGS import PRIMARY_TAGS, SECONDARY_TAGS, REMAINING_ALL_TAGS
 
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
@@ -53,25 +69,6 @@ def _write_log(path, entry):
         f.write(entry + "\n")
 
 
-ALL_TAGS = (
-    list(PRIMARY_TAGS.keys())
-    + list(SECONDARY_TAGS.keys())
-    + list(REMAINING_ALL_TAGS.keys())
-)
-RAW_COL = "extracted_text_full"
-NORMALIZED_COL = "extracted_text_normalized"
-ALL_COLUMNS = ALL_TAGS + [RAW_COL]
-
-RX_RECURSIVE = regex.compile(
-    r"(?s)<(?P<tag>" + "|".join(ALL_TAGS) + r")>(?P<content>(?:[^<]|(?R))*)</(?P=tag)>"
-)
-
-BLOCK_TAG = "tafsir_section_block"
-CHUNK_TAG = "tafsir_chunk"
-RX_BLOCK = regex.compile(rf"(?s)<{BLOCK_TAG}>(?P<content>(?:[^<]|(?R))*)</{BLOCK_TAG}>")
-RX_CHUNK = regex.compile(rf"(?s)<{CHUNK_TAG}>(?P<content>(?:[^<]|(?R))*)</{CHUNK_TAG}>")
-
-# Screen/DOM capture regions (pixel coords)
 OCR_REGION_RESPONSE = (17, 146, 712, 842)
 OCR_REGION_RELOAD = (38, 2, 83, 35)
 
@@ -79,110 +76,18 @@ watcher_a = OCRWatcher(*OCR_REGION_RESPONSE)
 watcher_b = OCRWatcher(*OCR_REGION_RELOAD)
 
 # Common screen points (pixel coords)
-POINT_OPEN_BROWSER = {"x": 585, "y": 1046}
-POINT_FIRST_FIELD = {"x": 1697, "y": 968}
-POINT_EDITOR_TOP = {"x": 814, "y": 124}
-POINT_EMPTY_CHATSPACE = {"x": 733, "y": 351}
-POINT_DEVTOOLS_ELEMENTS = {"x": 972, "y": 99}
-POINT_MODEL_SELECT = {"x": 1313, "y": 929}
-POINT_WHICH_MODEL = {"x": 1391, "y": 837}
-POINT_INPUT_FIELD = {"x": 927, "y": 891}
+POINT_OPEN_BROWSER = {"x": 213, "y": 1044}  # {"x": 585, "y": 1046}
+POINT_FIRST_FIELD = {"x": 1697, "y": 969}  # {"x": 1697, "y": 968}
+POINT_EDITOR_TOP = {"x": 1172, "y": 119}  # {"x": 814, "y": 124}
+POINT_EMPTY_CHATSPACE = {"x": 901, "y": 280}  # {"x": 733, "y": 351}
+POINT_DEVTOOLS_ELEMENTS = {"x": 1151, "y": 93}  # {"x": 972, "y": 99}
+POINT_MODEL_SELECT = {"x": 736, "y": 971}  # {"x": 1313, "y": 929}
+POINT_WHICH_MODEL = {"x": 458, "y": 955}  # {"x": 1391, "y": 837}
+POINT_INPUT_FIELD = {"x": 425, "y": 897}  # {"x": 927, "y": 891}
 
 GUARD_NGRAM_SIZE = 3
 GUARD_MAX_RETRIES = 2
 GUARD_MIN_LEN_RATIO = 0.5  # min(shorter/longer); protects against huge length drift
-
-
-def _normalize_guard_tokens(text):
-    if not text:
-        return []
-    if isinstance(text, list):
-        text = " ".join(text)
-    no_tags = regex.sub(r"<[^>]+>", " ", text)
-    normalized = " ".join(no_tags.split()).lower()
-    if not normalized:
-        return []
-    return normalized.split()
-
-
-def _normalize_to_string(text):
-    tokens = _normalize_guard_tokens(text)
-    return " ".join(tokens) if tokens else None
-
-
-def _ngram_set(tokens, n):
-    if not tokens:
-        return set()
-    n = max(1, min(n, len(tokens)))
-    return {" ".join(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
-
-
-def _length_ratio(tokens_a, tokens_b):
-    """Return shorter/longer length ratio; 0 if any side empty."""
-    la, lb = len(tokens_a), len(tokens_b)
-    if not la or not lb:
-        return 0.0
-    shorter, longer = (la, lb) if la <= lb else (lb, la)
-    return shorter / longer
-
-
-def evaluate_guard(
-    source_text, response_text, n=GUARD_NGRAM_SIZE, pre_normalized=False
-):
-    """
-    Lightweight guard to detect technical failures (missing/partial/other text).
-    Returns metrics and decision: pass | retry | log.
-    Now also considers length_ratio (shorter/longer). If length_ratio falls
-    below GUARD_MIN_LEN_RATIO, decision becomes retry.
-    """
-
-    def _to_tokens(val):
-        if pre_normalized:
-            if isinstance(val, list):
-                return val
-            if val is None:
-                return []
-            if isinstance(val, str):
-                return val.split()
-            return list(val)
-        return _normalize_guard_tokens(val)
-
-    source_tokens = _to_tokens(source_text)
-    response_tokens = _to_tokens(response_text)
-
-    if not source_tokens or not response_tokens or []:
-        return {"token_coverage": 0.0, "ngram_overlap": 0.0, "decision": "retry"}
-
-    response_set = set(response_tokens)
-    hits = sum(1 for t in source_tokens if t in response_set)
-    token_coverage = hits / len(source_tokens)
-
-    n = max(1, min(n, len(source_tokens), len(response_tokens)))
-    source_ngrams = _ngram_set(source_tokens, n)
-    response_ngrams = _ngram_set(response_tokens, n)
-    if source_ngrams:
-        ngram_overlap = len(source_ngrams & response_ngrams) / len(source_ngrams)
-    else:
-        ngram_overlap = 0.0
-
-    len_ratio = _length_ratio(source_tokens, response_tokens)
-
-    if token_coverage >= 0.85 and ngram_overlap >= 0.6:
-        decision = "pass"
-    elif token_coverage < 0.7 or ngram_overlap < 0.4:
-        decision = "retry"
-    else:
-        decision = "log"
-
-    if len_ratio < GUARD_MIN_LEN_RATIO:
-        decision = "retry"
-
-    return {
-        "token_coverage": token_coverage,
-        "ngram_overlap": ngram_overlap,
-        "length_ratio": len_ratio,
-        "decision": decision,
-    }
 
 
 def cleanup_cycle(
@@ -225,16 +130,20 @@ def cleanup_cycle(
             pending_futures.append(future)
         batch.clear()
 
-    pyautogui.click(**POINT_OPEN_BROWSER)  # was (220,1053)
+    pyautogui.click(**POINT_OPEN_BROWSER)
     time.sleep(0.5)
-    pyautogui.hotkey("ctrl", "shift", "r")
+    # time.sleep(0.5)
+    # pyautogui.hotkey("ctrl", "shift", "r")
     watcher_window_reload = watcher_b.run()
     if watcher_window_reload is True:
         pyautogui.moveTo(**POINT_DEVTOOLS_ELEMENTS, duration=0.15)  # (x=1274, y=940)
         time.sleep(0.5)
         pyautogui.click()
+        pyautogui.moveTo(**POINT_MODEL_SELECT, duration=0.15)
+        time.sleep(0.7)
+        pyautogui.click()
         pyautogui.moveTo(**POINT_WHICH_MODEL, duration=0.15)  # (x=1377, y=869)
-        time.sleep(0.5)
+        time.sleep(0.7)
         pyautogui.click()
         print("Antwort gespeichert. Nächster Durchgang...")
         _write_log("logs/responses.log", "cycle refreshed, response stored")
@@ -253,7 +162,7 @@ def get_code_from_devtools():
     pyperclip.copy(search_term)
     pyautogui.hotkey("ctrl", "v")
     time.sleep(1)
-    pyautogui.moveTo(**POINT_FIRST_FIELD)  # go first
+    pyautogui.moveTo(**POINT_FIRST_FIELD)
     time.sleep(0.5)
     pyautogui.click()
     pyautogui.moveTo(**POINT_EDITOR_TOP, duration=0.15)
@@ -264,8 +173,6 @@ def get_code_from_devtools():
     pyautogui.click()
     time.sleep(0.5)
     pyautogui.hotkey("ctrl", "c")
-    time.sleep(0.3)
-    pyautogui.hotkey("ctrl", "shift", "i")
     time.sleep(0.3)
     pyautogui.click(**POINT_OPEN_BROWSER)
 
@@ -295,82 +202,6 @@ def _walk(xml, row):
             row[tag] += "\n" + full
 
         _walk(content, row)
-
-
-def extract_nested_data(xml):
-    """
-    Extracts tags using BeautifulSoup to ensure correct parsing even with nested structures.
-    Populates all columns (ALL_TAGS) found within the XML fragment.
-    """
-    row = {tag: None for tag in ALL_TAGS}
-    if not xml:
-        row[RAW_COL] = xml
-        return row
-
-    soup = BeautifulSoup(xml, "html.parser")
-
-    for tag in ALL_TAGS:
-        elements = soup.find_all(tag)
-        if elements:
-            # Concatenate content if multiple tags of the same type exist
-            row[tag] = "\n".join([e.decode_contents() for e in elements])
-
-    row[RAW_COL] = xml
-    return row
-
-
-def extract_section_blocks(xml):
-    """
-    Parses the XML and returns a list of raw string content for each <tafsir_section_block>.
-    Uses BeautifulSoup to correctly handle the hierarchy.
-    """
-    if not xml:
-        return []
-
-    soup = BeautifulSoup(xml, "html.parser")
-    blocks = soup.find_all(BLOCK_TAG)
-
-    if blocks:
-        return [str(block) for block in blocks]
-
-    # Fallback only if no specific blocks found
-    return [xml]
-
-
-def extract_block_chunks(block_xml, tafsir_block_id):
-    """
-    Extracts <tafsir_chunk> elements from a block string using BeautifulSoup.
-    """
-    if not block_xml:
-        return []
-
-    soup = BeautifulSoup(block_xml, "html.parser")
-    chunks = soup.find_all(CHUNK_TAG)
-
-    chunk_rows = []
-
-    if not chunks:
-        # Fallback: treat the block content as one chunk data point if no explicit chunks are found
-        # but try to extract data columns from the block text itself
-        chunk_data = extract_nested_data(block_xml)
-        chunk_data["tafsir_block_id"] = tafsir_block_id
-        chunk_data["chunk"] = block_xml
-        return [chunk_data]
-
-    for chunk in chunks:
-        chunk_text = str(chunk)
-        # Extract columns (source, hadith, etc.) specifically from this chunk's content
-        chunk_data = extract_nested_data(chunk_text)
-        chunk_data["tafsir_block_id"] = tafsir_block_id
-        chunk_data["chunk"] = chunk_text
-        chunk_rows.append(chunk_data)
-
-    return chunk_rows
-
-
-def _get_table_columns(conn, table_name):
-    result = conn.execute(text(f"PRAGMA table_info('{table_name}')"))
-    return [row[1] for row in result]
 
 
 def _build_block_id_mapping(conn, block_table):
@@ -636,33 +467,6 @@ def repair_analysis_tables(engine_out, section_table, block_table, chunk_table):
         conn.execute(text("PRAGMA foreign_keys=ON"))
 
 
-def backfill_normalized(engine_out, section_table):
-    with engine_out.begin() as conn:
-        cols = _get_table_columns(conn, section_table)
-        if NORMALIZED_COL not in cols:
-            conn.execute(
-                text(f"ALTER TABLE {section_table} ADD COLUMN {NORMALIZED_COL} TEXT")
-            )
-
-        rows = conn.execute(
-            text(
-                f"SELECT id, {RAW_COL} FROM {section_table} "
-                f"WHERE {NORMALIZED_COL} IS NULL OR {NORMALIZED_COL} = ''"
-            )
-        )
-        updates = []
-        for row in rows:
-            updates.append({"id": row[0], "norm": _normalize_to_string(row[1])})
-
-        if updates:
-            conn.execute(
-                text(
-                    f"UPDATE {section_table} SET {NORMALIZED_COL} = :norm WHERE id = :id"
-                ),
-                updates,
-            )
-
-
 def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, records):
     """
     Insert tafsir records (strings or dicts) into section/block/chunk tables.
@@ -852,10 +656,9 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                     time.sleep(1.0)
 
                     # 1. Maus stabil auf Zielposition bringen und Fokus erzwingen
-                    for _ in range(3):
-                        pyautogui.moveTo(**POINT_INPUT_FIELD, duration=0.15)
-                        pyautogui.click()
-                        time.sleep(0.2)
+                    pyautogui.moveTo(**POINT_INPUT_FIELD, duration=0.15)
+                    pyautogui.click()
+                    time.sleep(0.2)
 
                     # 2. Sicherstellen, dass ein Eingabefeld aktiv ist
                     pyautogui.hotkey("ctrl", "a")
@@ -868,7 +671,7 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                     time.sleep(0.6)
 
                     # 4. Absenden (Enter mehrfach + Delay)
-                    for _ in range(2):
+                    for _ in range(3):
                         pyautogui.press("enter")
                         time.sleep(0.2)
 
@@ -876,7 +679,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
 
                     print("Warte auf Antwort von Gemini...")
                     _write_log("logs/progress.log", f"row={i}: waiting for response")
-                    pyautogui.hotkey("ctrl", "shift", "i")
                     time.sleep(1.5)
                     pyautogui.moveTo(**POINT_EMPTY_CHATSPACE, duration=0.15)
                     pyautogui.click()
@@ -890,16 +692,20 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                         extracted_text = get_code_from_devtools()
 
                     if not extracted_text:
+
                         print(
                             "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
                         )
                         _write_log(
                             "logs/progress.log", f"row={i}: no response detected"
                         )
+                        skipped_rows += 1
+                        processed += 1
                         break
 
+                    cleaned_text = clean_wrapped_xml(extracted_text) or extracted_text
                     source_tokens = _normalize_guard_tokens(original_text)
-                    response_tokens = _normalize_guard_tokens(extracted_text)
+                    response_tokens = _normalize_guard_tokens(cleaned_text)
                     guard = evaluate_guard(
                         source_tokens,
                         response_tokens,
@@ -933,6 +739,7 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                             f"coverage={guard['token_coverage']:.2f}, "
                             f"overlap={guard['ngram_overlap']:.2f}",
                         )
+                        insert_empty_section(engine_out, target_table, source_id)
                         skipped_rows += 1
                         processed += 1
                         break
@@ -941,13 +748,14 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                         print(
                             "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
                         )
+                        insert_empty_section(engine_out, target_table, source_id)
                         skipped_rows += 1
                         processed += 1
                         break
 
                     record = {
                         "id": source_id,
-                        "text": extracted_text,
+                        "text": cleaned_text,
                         NORMALIZED_COL: (
                             " ".join(response_tokens) if response_tokens else None
                         ),

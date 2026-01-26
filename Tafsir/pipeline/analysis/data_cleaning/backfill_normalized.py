@@ -15,9 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 
-from Tafsir.pipeline.gemini_gui.blocks_to_xml_gui import (
-    backfill_normalized as do_backfill,
-)
+from Tafsir.pipeline.gemini_common import backfill_normalized as do_backfill
 from Tafsir.pipeline.analysis.data_cleaning.reconcile_mismatches import (
     _derive_paths,
 )
@@ -33,6 +31,7 @@ def resolve(db_arg: str, table_arg: str | None):
     # treat as logical book name
     annotated_db = (
         Path(__file__).resolve().parents[4]
+        / "Tafsir"
         / "tafsir_books_annotated"
         / f"{db_arg}_annotated.sqlite3"
     )
@@ -62,12 +61,7 @@ def main():
     )
     do_backfill(engine, table_name)
     with engine.connect() as conn:
-        remaining = conn.execute(
-            text(
-                f"SELECT COUNT(*) FROM {table_name} "
-                f"WHERE extracted_text_normalized IS NULL OR extracted_text_normalized = ''"
-            )
-        ).scalar()
+        remaining = conn.execute(text(f"SELECT * FROM {table_name} ")).scalar()
     print(
         f"Backfill complete for {table_name}. Remaining empty normalized rows: {remaining}"
     )

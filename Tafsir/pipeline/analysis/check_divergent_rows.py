@@ -1,74 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import re
 import sqlite3
 from pathlib import Path
 from typing import List, Set
 
-import regex
-import unicodedata
-
-from Tafsir.pipeline.gemini_gui.blocks_to_xml_gui import evaluate_guard
+from Tafsir.pipeline.analysis.compare_tafsir_texts import normalize
+from Tafsir.pipeline.gemini_common import evaluate_guard
 
 
-RX_PREFIX_STANDALONE = regex.compile(r"(?<!\S)(و|ف|ب|ك|ل|س|لي)\s+(?=\S)", regex.UNICODE)
-TAG_RE = re.compile(r"<[^>]+>")
 NORMALIZED_COL = "extracted_text_normalized"
-
-# ── Harakat, Quranische Zeichen, kombinierende Marks
-ARABIC_DIACRITICS = regex.compile(
-    r"[\p{M}\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]+"
-)
-
-# Tatweel (Kashida)
-TATWEEL = "\u0640"
-
-# Alles außer arabischen Buchstaben + Leerzeichen
-NON_ARABIC = regex.compile(r"[^\p{Arabic} ]+")
-
-# Mehrfach-Leerzeichen
-MULTI_SPACE = regex.compile(r"\s+")
-
-
-def normalize_arabic(text: str) -> str:
-    if not text:
-        return ""
-
-    text = unicodedata.normalize("NFKD", text)
-    text = ARABIC_DIACRITICS.sub("", text)
-    text = text.replace(TATWEEL, "")
-    text = text.translate(
-        str.maketrans(
-            {
-                "أ": "ا",
-                "إ": "ا",
-                "آ": "ا",
-                "ٱ": "ا",
-                "ى": "ي",
-                "ئ": "ي",
-                "ؤ": "و",
-                "ة": "ه",
-                "ء": "",
-                "گ": "ك",
-                "ڤ": "ف",
-                "پ": "ب",
-                "چ": "ج",
-            }
-        )
-    )
-    text = NON_ARABIC.sub(" ", text)
-    text = MULTI_SPACE.sub(" ", text).strip()
-    text = RX_PREFIX_STANDALONE.sub(r"\1", text)
-    return unicodedata.normalize("NFKC", text)
-
-
-def normalize(text: str | None) -> List[str]:
-    text = text or ""
-    text = TAG_RE.sub(" ", text)
-    text = " ".join(text.split())
-    text = normalize_arabic(text)
-    return text.split(" ") if text else []
 
 
 def _derive_paths(db_path: Path, table_name: str) -> tuple[Path, str, str]:

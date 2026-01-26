@@ -15,14 +15,23 @@ from google import genai
 from google.genai import types
 
 from Tafsir.config import paths as cfg
-from Tafsir.pipeline.gemini_gui import blocks_to_xml_gui as gemini_mod
+from Tafsir.pipeline.gemini_common import (
+    ALL_COLUMNS,
+    NORMALIZED_COL,
+    _normalize_guard_tokens,
+    _normalize_to_string,
+    evaluate_guard,
+    extract_block_chunks,
+    extract_nested_data,
+    extract_section_blocks,
+    clean_wrapped_xml,
+)
 from Tafsir.pipeline.analysis import check_divergent_rows
 from Tafsir.pipeline.analysis.compare_tafsir_texts import (
     get_anomalies as compare_anomalies,
 )
 from Tafsir.pipeline.analysis.data_cleaning import (
     duplicated,
-    quran_null,
     reconcile_mismatches,
     reconcile_only_id_null,
 )
@@ -79,13 +88,6 @@ def _load_env_strict() -> bool:
 
 
 _ENV_LOADED = _load_env_strict()
-
-
-_GEMINI_PIPELINE = gemini_mod
-
-
-def _load_gemini_pipeline():
-    return _GEMINI_PIPELINE
 
 
 @dataclass(frozen=True)
@@ -273,21 +275,17 @@ class TafsirRollbackPipeline:
             print("   Keine Lücken gefunden.")
             return
 
-        # Lücken nicht in regen aufnehmen; nur melden, damit blocks_to_xml_api sie erzeugen kann.
+        # Lücken protokollieren und zur Regeneration vormerken, damit blocks_to_xml_api sie erzeugen kann.
         for (mid,) in missing:
-            self.missing_ids.add(int(mid))
-            self._log("missing_id", id=int(mid))
+            mid_id = int(mid)
+            self.missing_ids.add(mid_id)
+            self._log("missing_id", id=mid_id)
+            self.log_anomaly(mid_id)
         print(f"   Lücken gefunden: {len(missing)}")
 
     def check_duplicates(self):
         print("-> Prüfe auf Duplikate...")
         ids = duplicated.get_anomalies(str(self._ann_db_path()), self._ann_table())
-        for rid in ids:
-            self.log_anomaly(rid)
-
-    def check_quran_null(self):
-        print("-> Prüfe auf NULL in quran_verse...")
-        ids = quran_null.get_anomalies(str(self._ann_db_path()), self._ann_table())
         for rid in ids:
             self.log_anomaly(rid)
 
@@ -400,8 +398,8 @@ class TafsirRollbackPipeline:
                     if not batch:
                         break
                     for row in batch:
-                        src_tokens = gemini_mod._normalize_guard_tokens(row["src_text"])  # type: ignore
-                        ann_tokens = gemini_mod._normalize_guard_tokens(row["ann_text"])  # type: ignore
+                        src_tokens = _normalize_guard_tokens(row["src_text"])  # type: ignore
+                        ann_tokens = _normalize_guard_tokens(row["ann_text"])  # type: ignore
                         category = classify(src_tokens, ann_tokens)
                         rid = int(row["id"])
                         if category in {"minimal", "minor"}:
@@ -536,7 +534,7 @@ class TafsirRollbackPipeline:
                         if not xml_new:
                             continue
 
-                        guard = gemini_mod.evaluate_guard(src_text, xml_new)
+                        guard = evaluate_guard(src_text, xml_new)
                         if guard.get("decision") != "pass":
                             self.log_anomaly(target_id)
                             self._log(
@@ -549,12 +547,12 @@ class TafsirRollbackPipeline:
                         conn.execute(
                             f"""
                             UPDATE main.{ann_table}
-                            SET extracted_text_full = ?, {gemini_mod.NORMALIZED_COL} = ?
+                            SET extracted_text_full = ?, {NORMALIZED_COL} = ?
                             WHERE id = ?
                             """,
                             (
                                 xml_new,
-                                gemini_mod._normalize_to_string(xml_new),
+                                _normalize_to_string(xml_new),
                                 target_id,
                             ),
                         )
@@ -590,11 +588,10 @@ class TafsirRollbackPipeline:
     def _ensure_analysis_tables_sqlite(
         self, conn: sqlite3.Connection
     ) -> Tuple[str, str, str, List[str]]:
-        gem = _load_gemini_pipeline()
         target_table = self._ann_table()
         block_table = f"{target_table}_blocks"
         chunk_table = f"{target_table}_chunks"
-        all_columns: List[str] = list(getattr(gem, "ALL_COLUMNS"))
+        all_columns: List[str] = list(ALL_COLUMNS)
 
         cols_sql = ", ".join(f"{c} TEXT" for c in all_columns)
         conn.execute(
@@ -661,9 +658,7 @@ class TafsirRollbackPipeline:
         chunk_table: str,
         all_columns: List[str],
     ) -> None:
-        gem = _load_gemini_pipeline()
-
-        section_row = gem.extract_nested_data(xml)
+        section_row = extract_nested_data(xml)
         section_row["id"] = section_id
 
         cols = ["id"] + all_columns
@@ -674,7 +669,7 @@ class TafsirRollbackPipeline:
             values,
         )
 
-        blocks = list(gem.extract_section_blocks(xml))
+        blocks = list(extract_section_blocks(xml))
         if not blocks:
             return
 
@@ -694,7 +689,7 @@ class TafsirRollbackPipeline:
 
         chunk_values: List[Tuple[Any, ...]] = []
         for block_text, block_id in zip(blocks, block_ids):
-            chunk_rows = gem.extract_block_chunks(block_text, block_id)
+            chunk_rows = extract_block_chunks(block_text, block_id)
             for chunk in chunk_rows:
                 row_vals = [block_id, chunk.get("chunk")] + [
                     chunk.get(c) for c in all_columns
@@ -730,8 +725,8 @@ class TafsirRollbackPipeline:
             self._log("regen_fail_no_response", id=target_id, category=category)
             raise RuntimeError(f"Gemini lieferte keine Antwort fuer ID {target_id}.")
 
-        gem_mod = _load_gemini_pipeline()
-        guard = gem_mod.evaluate_guard(prompt, xml)
+        cleaned_xml = clean_wrapped_xml(xml) or xml
+        guard = evaluate_guard(prompt, cleaned_xml)
         if guard.get("decision") != "pass":
             self.log_unknown(target_id)
             self._log(
@@ -761,7 +756,7 @@ class TafsirRollbackPipeline:
                 self._insert_generated_xml(
                     conn,
                     target_id,
-                    xml,
+                    cleaned_xml,
                     target_table,
                     block_table,
                     chunk_table,
@@ -841,8 +836,8 @@ class TafsirRollbackPipeline:
                     self.missing_ids.add(int(rid))
                     continue
 
-                src_tokens = gemini_mod._normalize_guard_tokens(src_row[0])  # type: ignore
-                ann_tokens = gemini_mod._normalize_guard_tokens(ann_row[0])  # type: ignore
+                src_tokens = _normalize_guard_tokens(src_row[0])  # type: ignore
+                ann_tokens = _normalize_guard_tokens(ann_row[0])  # type: ignore
                 category = classify(src_tokens, ann_tokens)
                 if category in {"minimal", "minor"}:
                     self.minor_deltas.append({"id": rid, "category": category})
@@ -923,7 +918,6 @@ class TafsirRollbackPipeline:
         steps = [
             ("ID-Luecken", self.check_id_gaps),
             ("Duplikate", self.check_duplicates),
-            ("Quran-Null", self.check_quran_null),
             ("ID-NULL Patch", self.handle_id_null),
             ("Divergenz", self.handle_divergence),
             ("Feinvergleich", self.run_fine_comparison),

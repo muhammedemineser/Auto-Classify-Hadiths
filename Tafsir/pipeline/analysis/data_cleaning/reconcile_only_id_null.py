@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from Tafsir.pipeline.gemini_gui.blocks_to_xml_gui import evaluate_guard  # type: ignore
+from Tafsir.pipeline.gemini_common import evaluate_guard  # type: ignore
 
 
 def _find_repo_root() -> Path:

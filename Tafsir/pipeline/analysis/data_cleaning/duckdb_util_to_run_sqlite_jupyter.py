@@ -2,16 +2,39 @@
 import duckdb
 
 con = duckdb.connect()
-con.execute("ATTACH '.../katheer.sqlite3' AS src (TYPE SQLITE);")
-con.execute("ATTACH '.../katheer_annotated.sqlite3' AS ann (TYPE SQLITE);")
+
+con.execute(
+    """
+ATTACH '/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books_annotated/katheer_annotated.sqlite3'
+AS ann (TYPE SQLITE);
+ATTACH '/home/muhammed-emin-eser/desk/apps/classify/Tafsir/tafsir_books/katheer.sqlite3'
+AS srcc (TYPE SQLITE);
+"""
+)
 
 df = con.execute(
     """
-SELECT s.id, s.text_normalisiert, a.extracted_text_normalized
-FROM src.katheer s
-JOIN ann.tafsir_analysis_katheer a ON s.id = a.id
-WHERE s.id = 168
+WITH binned AS (
+  SELECT
+    best_ann_id,
+    CASE
+      WHEN delta_len = 0 THEN 0
+      ELSE CAST((delta_len - 1) / 10 AS INTEGER) + 1
+    END AS delta_bin
+  FROM src.katheer
+)
+SELECT
+  best_ann_id,
+  delta_bin,
+  COUNT(*) AS count
+FROM binned
+GROUP BY best_ann_id, delta_bin
+ORDER BY best_ann_id, delta_bin;
+
 """
 ).df()
 
-df  # Jupyter rendert RTL korrekt
+df
+
+
+# %%

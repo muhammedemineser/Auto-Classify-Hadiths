@@ -1,0 +1,29 @@
+// For format details, see https://aka.ms/devcontainer.json
+{
+  "name": "Anaconda (Python 3)",
+
+  // Build from your Dockerfile
+  "build": { 
+    "context": "..",
+    "dockerfile": "Dockerfile"
+  },
+
+  // Extensions to install automatically
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-toolsai.jupyter",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens"
+  ],
+
+  // VS Code settings inside the container
+  "settings": {
+    "editor.formatOnSave": true,
+    "python.analysis.typeCheckingMode": "basic"
+  }
+
+  // Optional:
+  // "postCreateCommand": "python --version",
+  // "remoteUser": "root"
+}

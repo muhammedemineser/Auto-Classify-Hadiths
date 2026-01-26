@@ -110,9 +110,7 @@ def ensure_ann_normalized(
         f"WHERE {ANN_NORM_COL} IS NULL OR {ANN_NORM_COL} = ''"
     ).fetchall()
     if rows:
-        payload = [
-            (" ".join(normalize(txt)), rid) for rid, txt in rows if txt
-        ]
+        payload = [(" ".join(normalize(txt)), rid) for rid, txt in rows if txt]
         cur.executemany(
             f"UPDATE {table} SET {ANN_NORM_COL} = ? WHERE rowid = ?",
             payload,
@@ -122,11 +120,24 @@ def ensure_ann_normalized(
 
 
 if __name__ == "__main__":
-    ensure_src_normalized(SRC_DB, SRC_TABLE)
-    ensure_ann_normalized(ANN_DB, ANN_TABLE)
+    # ensure_src_normalized(SRC_DB, SRC_TABLE)
+    # ensure_ann_normalized(ANN_DB, ANN_TABLE)
     df = smallest_length_matches(SRC_DB, ANN_DB)
-    pd.set_option("display.max_rows", 20)
     pd.set_option("display.max_columns", None)
-    print(df.head(20))
-    df
-    # %%
+    # Ergänzung: Histogramm der Längen-Differenzen in 10er-Schritten
+    summary = (
+        df.assign(
+            delta_bin=df["delta_len"].apply(
+                lambda x: 0 if x == 0 else (x - 1) // 10 + 1
+            )
+        )
+        .groupby(["best_ann_id", "delta_bin"])
+        .size()
+        .reset_index(name="count")
+        .sort_values(["best_ann_id", "delta_bin"])
+    )
+
+    summary
+
+
+# %%
