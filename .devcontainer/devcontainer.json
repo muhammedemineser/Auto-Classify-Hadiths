@@ -1,0 +1,43 @@
+{
+  "name": "Tafsir App",
+  "build": {
+    "context": "..",
+    "dockerfile": "../Dockerfile" // Nutzt dein Python 3.12 Dockerfile
+  },
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "settings": { "python.defaultInterpreterPath": "/usr/local/bin/python" }
+    }
+  },
+  // Moderne Methode, um Features wie Docker-in-Docker oder Git zu installieren
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:1": {
+      "configureZshAsDefaultShell": true
+    }
+  },
+
+  // Extensions und Settings sind jetzt in "customizations" gruppiert
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/conda/bin/python",
+        "python.analysis.typeCheckingMode": "basic",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+
+  // Führt Befehle nach dem Erstellen aus (z.B. Abhängigkeiten installieren)
+  "postCreateCommand": "pip install -r requirements.txt",
+
+  // Legt fest, als welcher User du im Container arbeitest
+  "remoteUser": "vscode"
+}

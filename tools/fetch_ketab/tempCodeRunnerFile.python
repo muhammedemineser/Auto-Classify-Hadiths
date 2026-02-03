@@ -1,0 +1,5 @@
+import regex
+text = "ابو يعلي"
+text = regex.sub(r"\bابو\b", "ابي", text)
+with open ("test.txt", "w") as f: 
+    f.write(text)

@@ -1,0 +1,2 @@
+Tafsir/tafsir_books/*.sqlite3 filter=lfs diff=lfs merge=lfs -text
+Tafsir/tafsir_books_annotated/*.sqlite3 filter=lfs diff=lfs merge=lfs -text

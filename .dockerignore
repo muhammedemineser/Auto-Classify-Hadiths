@@ -1,0 +1,10 @@
+.venv
+__pycache__
+.git
+.gitignore
+*.pyc
+.env
+SWITCH_MODEL.py
+sahihah/
+tools/ML/
+tools/fetch_ketab/

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment / Secrets
+.env
+.env.*
+Tafsir/config/.env
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+Tafsir/logs/
+
+# Databases / Artifacts
+*.sqlite3
+*.db
+*.tar.gz
+
+# OS
+.DS_Store
+
+# Docker
+.env.docker
+
+.venv/*
+SWITCH_MODEL.py
+__pycache__/
+*.pyc
+.env

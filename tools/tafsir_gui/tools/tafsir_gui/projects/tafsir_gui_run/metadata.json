@@ -1,0 +1,14 @@
+{
+  "gcp_project_name": "tafsir_gui_run",
+  "billing_country": "",
+  "org_folder": "",
+  "gcp_checklist": {
+    "Create/select project": "Done",
+    "Enable Generative Language API": "Done",
+    "Create API key": "Done",
+    "Paste key and Test": "Done",
+    "Check quotas (if needed)": "Done"
+  },
+  "gcp_no_cli": false,
+  "gcp_mode": "Console-first"
+}

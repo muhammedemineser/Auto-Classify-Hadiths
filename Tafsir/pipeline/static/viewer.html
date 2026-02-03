@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tafsir Explorer</title>
+    <style>
+      :root {
+        --bg: #0b0f14;
+        --panel: #111826;
+        --ink: #f2e8d5;
+        --muted: #9ca6bb;
+        --border: rgba(255, 255, 255, 0.08);
+        --accent: #f6c344;
+        --shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+        --highlight-ink: #0f1014;
+        --badge: #1b2537;
+      }
+      body.light {
+        --bg: #f7f7f9;
+        --panel: #ffffff;
+        --ink: #0f172a;
+        --muted: #526079;
+        --border: #d9dce4;
+        --accent: #b6860f;
+        --shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+        --highlight-ink: #0f1014;
+        --badge: #eef1f7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          "Manrope", "Amiri", "Noto Naskh Arabic", system-ui, sans-serif;
+        line-height: 1.8;
+        padding-left: 240px;
+        transition:
+          background 0.3s ease,
+          color 0.3s ease;
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        backdrop-filter: blur(10px);
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        border-bottom: 1px solid var(--border);
+        transition: all 0.25s ease;
+      }
+
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 12px 18px;
+      }
+      header.scrolled .wrap {
+        padding: 8px 14px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: 0.3px;
+      }
+      header.scrolled h1 {
+        font-size: 17px;
+      }
+
+      .eyebrow {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        margin: 0;
+      }
+
+      .header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .controls-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 10px;
+        align-items: center;
+        margin-top: 10px;
+      }
+      header.scrolled .controls-grid {
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      }
+
+      input,
+      select,
+      button {
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--ink);
+        padding: 10px 12px;
+        font-size: 14px;
+        width: 100%;
+        min-height: 44px;
+        transition:
+          border-color 0.2s ease,
+          transform 0.1s ease;
+      }
+      header.scrolled input,
+      header.scrolled select,
+      header.scrolled button {
+        padding: 9px 11px;
+        font-size: 13px;
+        min-height: 40px;
+      }
+
+      input:focus,
+      select:focus,
+      button:focus {
+        outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button.primary {
+        border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      header.scrolled .toolbar {
+        gap: 6px;
+      }
+
+      .status {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .legend {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 220px;
+        padding: 16px 12px 24px;
+        border-right: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 94%, transparent);
+        overflow-y: auto;
+        box-shadow: inset -1px 0 0 var(--border);
+      }
+
+      .legend h3 {
+        margin: 10px 0 12px;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+
+      .legend .tag {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--panel) 70%, transparent);
+        border: 1px solid var(--border);
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .legend .swatch {
+        width: 18px;
+        height: 18px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        flex: 0 0 18px;
+      }
+
+      main {
+        padding: 14px 18px 42px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+
+      .cards {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin-top: 10px;
+      }
+
+      .card {
+        background: color-mix(in srgb, var(--panel) 95%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(6px);
+      }
+
+      .meta {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 10px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .pill {
+        background: color-mix(in srgb, var(--accent) 25%, var(--panel));
+        border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+        color: var(--ink);
+        padding: 6px 10px;
+        border-radius: 999px;
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-weight: 700;
+      }
+
+      .pill.secondary {
+        background: color-mix(in srgb, var(--panel) 75%, var(--accent));
+      }
+
+      .badge {
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: var(--badge);
+      }
+
+      .content {
+        white-space: pre-wrap;
+        font-size: 17px;
+      }
+
+      .content.highlight-off .tag-swatch {
+        background: none !important;
+        color: var(--ink);
+        border-color: var(--border);
+      }
+
+      .tag-swatch {
+        padding: 0.2em 0.4em;
+        border-radius: 0.35em;
+        border: 1px solid currentColor;
+        color: var(--highlight-ink);
+        font-weight: 700;
+        display: inline-block;
+        margin-inline: 1px;
+      }
+      .structure-marker {
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        padding: 14px 14px 10px;
+        margin: 10px 0;
+        position: relative;
+        background: color-mix(in srgb, var(--panel) 78%, transparent);
+        box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border) 60%, transparent);
+      }
+      .structure-marker .structure-marker {
+        margin-inline: 6px;
+        background: color-mix(in srgb, var(--panel) 85%, transparent);
+      }
+      .structure-chip {
+        position: absolute;
+        top: -10px;
+        right: 14px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.03em;
+        border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+        background: color-mix(in srgb, var(--accent) 35%, var(--panel));
+        color: var(--ink);
+        text-transform: uppercase;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+      }
+      .structure-section {
+        border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+      }
+      .structure-block {
+        border-color: color-mix(in srgb, #58a6ff 45%, var(--border));
+      }
+      .structure-chunk {
+        border-color: color-mix(in srgb, #9f7aea 50%, var(--border));
+      }
+      .search-hit {
+        background: linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--accent) 75%, #fff9c4),
+          #ffed8a
+        );
+        color: #1c1500;
+        padding: 0 0.22em;
+        border-radius: 0.28em;
+        font-weight: 800;
+        box-shadow:
+          0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent),
+          0 6px 18px rgba(0, 0, 0, 0.18);
+      }
+      .tag-swatch.focused-hit {
+        position: relative;
+        outline: 2px solid color-mix(in srgb, red 60%, transparent);
+        box-shadow:
+          0 0 0 3px color-mix(in srgb, red 30%, transparent),
+          0 0 16px 4px color-mix(in srgb, red 55%, transparent);
+        border-radius: 8px;
+        z-index: 1;
+      }
+      .tag-swatch.focused-hit::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: inherit;
+        background: color-mix(in srgb, var(--accent) 25%, transparent);
+        mix-blend-mode: multiply;
+      }
+
+      .ayah {
+        margin-top: 8px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px dashed var(--border);
+        background: color-mix(in srgb, var(--panel) 70%, transparent);
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .ayah summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: var(--ink);
+        list-style: none;
+        outline: none;
+      }
+      .ayah summary::-webkit-details-marker {
+        display: none;
+      }
+      .ayah summary::after {
+        content: "▼";
+        margin-inline-start: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .ayah[open] summary::after {
+        content: "▲";
+      }
+      .ayah-text {
+        margin-top: 8px;
+        color: var(--ink);
+      }
+
+      .load-more {
+        margin: 24px auto 40px;
+        max-width: 260px;
+        display: block;
+      }
+
+      .help {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      @media (max-width: 1040px) {
+        body {
+          padding-left: 0;
+        }
+        .legend {
+          position: static;
+          width: auto;
+          height: auto;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          flex-direction: row;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .legend .tag {
+          width: calc(50% - 6px);
+        }
+        .header-top {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 6px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        header .controls-grid {
+          grid-template-columns: 1fr;
+        }
+        .toolbar {
+          width: 100%;
+        }
+        .legend .tag {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="legend" id="legend">
+      <div class="eyebrow">Tags</div>
+      <h3>Active highlights</h3>
+      <div id="legendItems"></div>
+    </aside>
+
+    <header>
+      <div class="wrap header-top">
+        <div class="brand">
+          <div class="eyebrow">With XML Annotations</div>
+          <h1>Tafsir Explorer</h1>
+        </div>
+        <div class="toolbar">
+          <button id="toggleHighlight" class="primary">Highlights: ON</button>
+          <button id="themeToggle">Light/Dark</button>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="controls-grid">
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="Search annotated XML…"
+            autocomplete="off"
+          />
+          <select id="tafsirSelect">
+            <option value="">Default tafsir</option>
+            <option value="all">All tafasir</option>
+          </select>
+          <select id="modeSelect">
+            <option value="full">Full Text</option>
+            <option value="section">Sections</option>
+            <option value="blocks">Tafsir Blocks</option>
+            <option value="chunks">Tafsir Chunks</option>
+          </select>
+          <select id="filterSelect">
+            <option value="">No filter (Extracted Text)</option>
+            <option value="hadith">hadith (exclusive)</option>
+            <option value="quran_verse">Quran verse</option>
+            <option value="reason_for_revelation_variants">
+              Reason for Revelation Variants
+            </option>
+            <option value="meccan_medinan">Meccan / Medinian</option>
+          </select>
+          <input
+            id="surahInput"
+            type="number"
+            min="1"
+            max="114"
+            inputmode="numeric"
+            placeholder="Surah # (1-114)"
+          />
+          <input
+            id="ayahInput"
+            type="number"
+            min="1"
+            inputmode="numeric"
+            placeholder="Ayah # (optional)"
+          />
+          <button id="searchBtn" class="primary">Search</button>
+          <button id="browseBtn">Go to next Section</button>
+          <button id="jumpBtn">Go to Surah/Ayah</button>
+        </div>
+        <div class="help">
+          <span
+            ><strong>Browse</strong>: paginated navigation without a query (by
+            ID).</span
+          >
+          <span
+            ><strong>Search</strong>: query-based lookup across annotated
+            XML.</span
+          >
+          <span><strong>Jump</strong>: load a specific surah or surah+ayah.</span>
+        </div>
+        <div class="status" id="status">Connecting…</div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="cards" id="cards"></div>
+      <button id="loadMore" class="load-more">Load more</button>
+    </main>
+
+    <script>
+      const API_BASE = "";
+      const PAGE_SIZE = 15;
+      let debounceTimer = null;
+
+      const state = {
+        query: "",
+        mode: "full",
+        filter: "",
+        tafsir: "",
+        availableTafsirs: [],
+        highlight: true,
+        offset: 0,
+        total: 0,
+        results: [],
+        palette: {},
+        loading: false,
+      };
+
+      let lastModeBeforeFilter = state.mode;
+      let hitNodes = [];
+      let hitIndex = -1;
+
+      const searchInput = document.getElementById("searchInput");
+      const cards = document.getElementById("cards");
+      const statusEl = document.getElementById("status");
+      const legendItems = document.getElementById("legendItems");
+      const loadMoreBtn = document.getElementById("loadMore");
+      const modeSelect = document.getElementById("modeSelect");
+      const filterSelect = document.getElementById("filterSelect");
+      const tafsirSelect = document.getElementById("tafsirSelect");
+      const toggleHighlight = document.getElementById("toggleHighlight");
+      const searchBtn = document.getElementById("searchBtn");
+      const browseBtn = document.getElementById("browseBtn");
+      const jumpBtn = document.getElementById("jumpBtn");
+      const surahInput = document.getElementById("surahInput");
+      const ayahInput = document.getElementById("ayahInput");
+      const themeToggle = document.getElementById("themeToggle");
+
+      const themePref = localStorage.getItem("theme");
+      if (themePref === "light") {
+        document.body.classList.add("light");
+      }
+
+      themeToggle.addEventListener("click", () => {
+        document.body.classList.toggle("light");
+        localStorage.setItem(
+          "theme",
+          document.body.classList.contains("light") ? "light" : "dark",
+        );
+      });
+
+      function setStatus(msg) {
+        statusEl.textContent = msg;
+      }
+
+      function escapeHtml(s) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function buildSearchRegex(query) {
+        const terms = (query || "")
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((t) => t.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"));
+        if (!terms.length) return null;
+        return new RegExp(`(${terms.join("|")})`, "gi");
+      }
+
+      function highlightPlainText(text, query) {
+        const plain = text || "";
+        const re = buildSearchRegex(query);
+        if (!re) return escapeHtml(plain);
+        return escapeHtml(plain).replace(
+          re,
+          (m) => `<mark class="search-hit">${m}</mark>`,
+        );
+      }
+
+      function highlightHtmlContent(html, query) {
+        const re = buildSearchRegex(query);
+        if (!re) return html || "";
+
+        const container = document.createElement("div");
+        container.innerHTML = html || "";
+
+        const walker = document.createTreeWalker(
+          container,
+          NodeFilter.SHOW_TEXT,
+          null,
+        );
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode())) {
+          textNodes.push(node);
+        }
+
+        textNodes.forEach((textNode) => {
+          const original = textNode.nodeValue || "";
+          re.lastIndex = 0;
+          let match;
+          let lastIndex = 0;
+          const fragments = [];
+
+          while ((match = re.exec(original))) {
+            if (match.index > lastIndex) {
+              fragments.push(
+                document.createTextNode(original.slice(lastIndex, match.index)),
+              );
+            }
+            const mark = document.createElement("mark");
+            mark.className = "search-hit";
+            mark.textContent = match[0];
+            fragments.push(mark);
+            lastIndex = re.lastIndex;
+          }
+
+          if (!fragments.length) return;
+
+          if (lastIndex < original.length) {
+            fragments.push(document.createTextNode(original.slice(lastIndex)));
+          }
+
+          const frag = document.createDocumentFragment();
+          fragments.forEach((f) => frag.appendChild(f));
+          if (textNode.parentNode) {
+            textNode.parentNode.replaceChild(frag, textNode);
+          }
+        });
+
+        return container.innerHTML;
+      }
+
+      async function fetchJSON(url) {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("request failed");
+        }
+        return res.json();
+      }
+
+      function renderCardBody(body, item) {
+        if (!body || !item) return;
+        if (item.content_html) {
+          body.innerHTML = highlightHtmlContent(
+            item.content_html,
+            state.query,
+          );
+        } else {
+          const plain = item.content_plain || "";
+          body.innerHTML = highlightPlainText(plain, state.query);
+        }
+        body.classList.toggle("highlight-off", !state.highlight);
+      }
+
+      function setTafsirOptions(list, defaultKey) {
+        const defaultValue = Array.isArray(defaultKey)
+          ? defaultKey[0]
+          : defaultKey;
+        const keys = Array.isArray(list) ? list : [];
+        tafsirSelect.innerHTML = "";
+
+        const allOpt = document.createElement("option");
+        allOpt.value = "all";
+        allOpt.textContent = "All tafasir";
+        tafsirSelect.appendChild(allOpt);
+
+        keys.forEach((key) => {
+          const opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = key;
+          tafsirSelect.appendChild(opt);
+        });
+
+        const desired =
+          state.tafsir || defaultValue || (keys.length ? keys[0] : "all");
+        state.tafsir = desired;
+        tafsirSelect.value = desired;
+      }
+
+      function buildCard(item) {
+        const card = document.createElement("article");
+        card.className = "card";
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+
+        const modeBadge = document.createElement("span");
+        modeBadge.className = "badge";
+        modeBadge.textContent = `Mode: ${item.mode}`;
+        meta.appendChild(modeBadge);
+
+        if (item.tafsir) {
+          const tafsirBadge = document.createElement("span");
+          tafsirBadge.className = "badge";
+          tafsirBadge.textContent = `Tafsir: ${item.tafsir}`;
+          meta.appendChild(tafsirBadge);
+        }
+
+        if (item.sura_number) {
+          const sura = document.createElement("span");
+          sura.className = "pill";
+          sura.innerHTML = `Sura ${item.sura_name || ""} <span class="badge">${item.sura_number}</span>`;
+          meta.appendChild(sura);
+        }
+        if (item.ayah_number) {
+          const aya = document.createElement("span");
+          aya.className = "pill secondary";
+          aya.textContent = `Ayah ${item.ayah_number}`;
+          meta.appendChild(aya);
+        }
+        const gid = document.createElement("span");
+        gid.className = "badge";
+        gid.textContent = `Global ID: ${item.id}`;
+        meta.appendChild(gid);
+
+        card.appendChild(meta);
+
+        if (item.ayah_text) {
+          const ayaBox = document.createElement("details");
+          ayaBox.className = "ayah";
+          const summary = document.createElement("summary");
+          summary.textContent = "Show full Tafsir";
+          const ayahBody = document.createElement("div");
+          ayahBody.className = "ayah-text";
+          ayahBody.textContent = item.ayah_text;
+          ayaBox.appendChild(summary);
+          ayaBox.appendChild(ayahBody);
+          card.appendChild(ayaBox);
+        }
+
+        const body = document.createElement("div");
+        body.className = "content";
+        renderCardBody(body, item);
+        card.appendChild(body);
+
+        return card;
+      }
+
+      function renderLegend() {
+        legendItems.innerHTML = "";
+        const entries = Object.entries(state.palette || {});
+        if (!entries.length) {
+          legendItems.innerHTML = '<div class="badge">No active tags</div>';
+          return;
+        }
+        entries.forEach(([tag, color]) => {
+          const row = document.createElement("div");
+          row.className = "tag";
+          const swatch = document.createElement("span");
+          swatch.className = "swatch";
+          swatch.style.background = color;
+          swatch.style.borderColor = color;
+          row.appendChild(swatch);
+          const name = document.createElement("span");
+          name.textContent = tag;
+          row.appendChild(name);
+          legendItems.appendChild(row);
+        });
+      }
+
+      function renderCards(results, reset) {
+        if (reset) {
+          cards.innerHTML = "";
+        }
+        results.forEach((item) => cards.appendChild(buildCard(item)));
+        renderLegend();
+        loadMoreBtn.style.display =
+          state.offset < state.total ? "block" : "none";
+        rebuildHitNodes();
+      }
+
+      async function loadData(reset = true) {
+        if (state.loading) return;
+        state.loading = true;
+        setStatus("Loading…");
+        if (reset) {
+          state.offset = 0;
+          state.results = [];
+          hitNodes = [];
+          hitIndex = -1;
+        }
+
+        const endpoint =
+          state.query.trim().length > 0 ? "/api/search" : "/api/browse";
+        const params = new URLSearchParams({
+          offset: state.offset,
+          limit: PAGE_SIZE,
+          mode: state.mode,
+          highlight: true, // always fetch with highlight so we can toggle client-side
+        });
+        if (state.filter) params.set("filter", state.filter);
+        if (state.tafsir) params.set("tafsir", state.tafsir);
+        if (state.query.trim()) params.set("q", state.query.trim());
+
+        try {
+          const data = await fetchJSON(`${API_BASE}${endpoint}?${params}`);
+          if (Array.isArray(data.available_tafsirs)) {
+            state.availableTafsirs = data.available_tafsirs;
+            setTafsirOptions(data.available_tafsirs, data.tafsir);
+          }
+          state.total = data.total ?? 0;
+          state.palette = reset
+            ? data.palette || {}
+            : { ...state.palette, ...(data.palette || {}) };
+          const fetched = data.results || [];
+          if (reset) {
+            state.results = fetched;
+            state.offset = fetched.length;
+          } else {
+            state.results = state.results.concat(fetched);
+            state.offset += fetched.length;
+          }
+          renderCards(fetched, reset);
+          setStatus(
+            `${state.results.length} / ${state.total || "?"} loaded — Mode: ${state.mode} | ${
+              state.query ? "Search" : "Browse"
+            } | Tafsir: ${state.tafsir || "default"}${
+              state.filter ? ` | Filter: ${state.filter}` : ""
+            }`,
+          );
+        } catch (err) {
+          console.error(err);
+          setStatus("Something went wrong. Please try again.");
+          cards.innerHTML = "";
+          loadMoreBtn.style.display = "none";
+          return null;
+        } finally {
+          state.loading = false;
+        }
+        return true;
+      }
+
+      function onSearchInput() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          state.query = searchInput.value.trim();
+          loadData(true);
+        }, 220);
+      }
+
+      function applyModeLockForFilter() {
+        const filterActive = !!state.filter;
+        if (filterActive) {
+          if (!modeSelect.disabled) {
+            lastModeBeforeFilter = state.mode;
+          }
+          state.mode = "full";
+          modeSelect.value = "full";
+          modeSelect.disabled = true;
+        } else {
+          modeSelect.disabled = false;
+          state.mode = lastModeBeforeFilter || state.mode || "full";
+          modeSelect.value = state.mode;
+        }
+      }
+
+      searchInput.addEventListener("input", onSearchInput);
+      searchBtn.addEventListener("click", async () => {
+        const newQuery = searchInput.value.trim();
+        if (newQuery === state.query && hitNodes.length) {
+          goToNextHit();
+          return;
+        }
+        state.query = newQuery;
+        const ok = await loadData(true);
+        if (ok) goToNextHit();
+      });
+      browseBtn.addEventListener("click", async () => {
+        // If we were in search mode, switch to browse once then stay on the loaded list
+        if (state.query) {
+          state.query = "";
+          searchInput.value = "";
+          const ok = await loadData(true);
+          if (ok) goToNextHit();
+          return;
+        }
+
+        // Ensure we have something to browse
+        if (!state.results.length) {
+          const ok = await loadData(true);
+          if (ok) goToNextHit();
+          return;
+        }
+
+        // When we reach the end and more results exist, fetch the next page before moving
+        const atEnd = hitNodes.length && hitIndex === hitNodes.length - 1;
+        if (atEnd && state.offset < state.total) {
+          const prevIndex = hitIndex;
+          const ok = await loadData(false);
+          if (ok) {
+            hitIndex = prevIndex;
+          }
+        }
+
+        goToNextHit();
+      });
+
+      async function jumpToSurahAyah() {
+        const surahVal = Number(surahInput.value);
+        const ayahRaw = (ayahInput.value || "").trim();
+        const ayahVal = ayahRaw ? Number(ayahRaw) : null;
+
+        if (!surahVal || Number.isNaN(surahVal)) {
+          setStatus("Enter a surah number between 1 and 114.");
+          return;
+        }
+        if (surahVal < 1 || surahVal > 114) {
+          setStatus("Surah must be between 1 and 114.");
+          return;
+        }
+        if (ayahRaw && (Number.isNaN(ayahVal) || ayahVal <= 0)) {
+          setStatus("Ayah must be a positive number.");
+          return;
+        }
+
+        state.query = "";
+        searchInput.value = "";
+        setStatus("Loading verse…");
+
+        const params = new URLSearchParams({
+          surah: surahVal,
+          mode: state.mode,
+          highlight: true,
+        });
+        if (ayahVal) params.set("ayah", ayahVal);
+        if (state.filter) params.set("filter", state.filter);
+        if (state.tafsir) params.set("tafsir", state.tafsir);
+
+        try {
+          const data = await fetchJSON(`${API_BASE}/api/jump?${params}`);
+          state.results = [data];
+          state.total = 1;
+          state.offset = 1;
+          state.palette = data.palette || {};
+          renderCards(state.results, true);
+          setStatus(
+            `Jumped to Sura ${data.sura_number || surahVal}${
+              data.ayah_number ? `, Ayah ${data.ayah_number}` : ""
+            } — Global ID ${data.id}`,
+          );
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (err) {
+          console.error(err);
+          setStatus("Target surah/ayah not found.");
+        }
+      }
+
+      jumpBtn.addEventListener("click", jumpToSurahAyah);
+      surahInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          jumpToSurahAyah();
+        }
+      });
+      ayahInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          jumpToSurahAyah();
+        }
+      });
+
+      modeSelect.addEventListener("change", () => {
+        state.mode = modeSelect.value;
+        lastModeBeforeFilter = state.mode;
+        loadData(true);
+      });
+      filterSelect.addEventListener("change", () => {
+        state.filter = filterSelect.value;
+        applyModeLockForFilter();
+        loadData(true);
+      });
+      tafsirSelect.addEventListener("change", () => {
+        state.tafsir = tafsirSelect.value;
+        loadData(true);
+      });
+      applyModeLockForFilter();
+      toggleHighlight.addEventListener("click", () => {
+        state.highlight = !state.highlight;
+        toggleHighlight.textContent = `Highlights: ${
+          state.highlight ? "ON" : "OFF"
+        }`;
+        // Re-render locally without refetch
+        Array.from(cards.children).forEach((card, idx) => {
+          const body = card.querySelector(".content");
+          const item = state.results[idx];
+          if (!body || !item) return;
+          renderCardBody(body, item);
+        });
+        rebuildHitNodes();
+      });
+
+      loadMoreBtn.addEventListener("click", () => loadData(false));
+
+      function rebuildHitNodes() {
+        hitNodes = Array.from(cards.querySelectorAll(".content .search-hit"));
+        if (!hitNodes.length) {
+          hitNodes = Array.from(cards.querySelectorAll(".card"));
+        }
+        hitIndex = hitNodes.length ? 0 : -1;
+      }
+
+      function goToNextHit() {
+        if (!hitNodes.length) return;
+        // remove focus from previous
+        hitNodes.forEach((n) => n.classList.remove("focused-hit"));
+        hitIndex = (hitIndex + 1) % hitNodes.length;
+        const node = hitNodes[hitIndex];
+        const rect = node.getBoundingClientRect();
+        const headerHeight = headerEl
+          ? headerEl.getBoundingClientRect().height
+          : 0;
+        const top = rect.top + window.scrollY - headerHeight;
+        window.scrollTo({ top, behavior: "smooth" });
+        node.classList.add("focused-hit");
+      }
+
+      searchInput.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const newQuery = searchInput.value.trim();
+          if (newQuery === state.query && hitNodes.length) {
+            goToNextHit();
+            return;
+          }
+          state.query = newQuery;
+          const ok = await loadData(true);
+          if (ok) goToNextHit();
+        }
+      });
+
+      const headerEl = document.querySelector("header");
+      function updateHeaderMode() {
+        headerEl.classList.toggle("scrolled", window.scrollY > 50);
+      }
+      window.addEventListener("scroll", updateHeaderMode);
+      updateHeaderMode();
+
+      (async function init() {
+        setStatus("Connecting…");
+        try {
+          const health = await fetchJSON(`${API_BASE}/health`);
+          if (Array.isArray(health.available_tafsirs)) {
+            state.availableTafsirs = health.available_tafsirs;
+            setTafsirOptions(health.available_tafsirs, health.default_tafsir);
+          }
+          if (!state.tafsir) state.tafsir = health.default_tafsir || "";
+          setStatus("Ready");
+          await loadData(true);
+        } catch (err) {
+          console.error(err);
+          setStatus("Backend not reachable.");
+        }
+      })();
+    </script>
+  </body>
+</html>

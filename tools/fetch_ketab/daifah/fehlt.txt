@@ -1,0 +1,26 @@
+▶ Start bei Hadith Nr. 1
+⚠️ LÜCKE GEFUNDEN! Zeile 169: Erwartet 162, aber gefunden: 161
+⚠️ LÜCKE GEFUNDEN! Zeile 1013: Erwartet 1002, aber gefunden: 1001
+⚠️ LÜCKE GEFUNDEN! Zeile 1514: Erwartet 1502, aber gefunden: 1501
+⚠️ LÜCKE GEFUNDEN! Zeile 3518: Erwartet 3502, aber gefunden: 3501
+⚠️ LÜCKE GEFUNDEN! Zeile 4020: Erwartet 4002, aber gefunden: 4001
+⚠️ LÜCKE GEFUNDEN! Zeile 4522: Erwartet 4502, aber gefunden: 4501
+⚠️ LÜCKE GEFUNDEN! Zeile 4857: Erwartet 4835, aber gefunden: 4836
+⚠️ LÜCKE GEFUNDEN! Zeile 5024: Erwartet 5002, aber gefunden: 5001
+⚠️ LÜCKE GEFUNDEN! Zeile 5202: Erwartet 5178, aber gefunden: 5180
+⚠️ LÜCKE GEFUNDEN! Zeile 5302: Erwartet 5278, aber gefunden: 5280
+⚠️ LÜCKE GEFUNDEN! Zeile 5315: Erwartet 5292, aber gefunden: 5294
+⚠️ LÜCKE GEFUNDEN! Zeile 5524: Erwartet 5502, aber gefunden: 5501
+⚠️ LÜCKE GEFUNDEN! Zeile 5788: Erwartet 5764, aber gefunden: 5766
+⚠️ LÜCKE GEFUNDEN! Zeile 5815: Erwartet 5792, aber gefunden: 5794
+⚠️ LÜCKE GEFUNDEN! Zeile 5973: Erwartet 5952, aber gefunden: 5953
+⚠️ LÜCKE GEFUNDEN! Zeile 6023: Erwartet 6002, aber gefunden: 6001
+⚠️ LÜCKE GEFUNDEN! Zeile 6525: Erwartet 6502, aber gefunden: 6501
+⚠️ LÜCKE GEFUNDEN! Zeile 6700: Erwartet 6675, aber gefunden: 6685
+⚠️ LÜCKE GEFUNDEN! Zeile 6902: Erwartet 6886, aber gefunden: 6888
+⚠️ LÜCKE GEFUNDEN! Zeile 6942: Erwartet 6927, aber gefunden: 6931
+⚠️ LÜCKE GEFUNDEN! Zeile 7161: Erwartet 7149, aber gefunden: 7151
+----------------------------------------
+✅ Prüfung abgeschlossen.
+Gesamtanzahl gefundener Hadithe: 7142
+❌ Es fehlen insgesamt ca. 20 Nummern.
