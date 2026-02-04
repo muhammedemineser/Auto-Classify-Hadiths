@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 try:
     import stanza  # type: ignore
 except Exception:  # pragma: no cover
-    stanza = None  # type: ignore
+    ImportError("Please install stanza to use StanzaCache.")
 
 
 @dataclass

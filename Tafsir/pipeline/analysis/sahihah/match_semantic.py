@@ -9,8 +9,7 @@ try:
     from sentence_transformers import SentenceTransformer  # type: ignore
     from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 except Exception:  # pragma: no cover
-    SentenceTransformer = None  # type: ignore
-    cosine_similarity = None  # type: ignore
+    ImportError("Please install sentence-transformers and scikit-learn to use SemanticReranker.")
 
 
 @dataclass

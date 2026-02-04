@@ -7,6 +7,9 @@ import glob
 import sqlite3
 import ast
 import math
+import time
+import resource
+import contextlib
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
@@ -55,7 +58,7 @@ USE_DUCKDB = os.environ.get("USE_DUCKDB", "1") == "1"
 ENABLE_STANZA = os.environ.get("ENABLE_STANZA", "1") == "1"
 ENABLE_SEM_RERANK = os.environ.get("ENABLE_SEM_RERANK", "1") == "1"
 DEBUG = os.environ.get("DEBUG", "1") == "1"
-PLOT_COVERAGE = os.environ.get("PLOT_COVERAGE", "0") == "1"
+PLOT_COVERAGE = os.environ.get("PLOT_COVERAGE", "1") == "1"
 
 MIN_CANDS = int(os.environ.get("MIN_CANDS", "25"))
 MIN_ACCEPT_SCORE = float(os.environ.get("MIN_ACCEPT_SCORE", "0.75"))
@@ -65,6 +68,229 @@ ANCHOR_STRONG_K = int(os.environ.get("ANCHOR_STRONG_K", "3"))
 ANCHOR_TOP_M = int(os.environ.get("ANCHOR_TOP_M", "10"))
 ANCHOR_STRIDE = int(os.environ.get("ANCHOR_STRIDE", "25"))
 ORDER_PRECHECK_PENALTY = float(os.environ.get("ORDER_PRECHECK_PENALTY", "0.9"))
+
+# =========================
+# PERFORMANCE / PROFILING
+# =========================
+
+PERF_ENABLED = os.environ.get("PERF", "1") == "1"
+PERF_CPROFILE = os.environ.get("PERF_CPROFILE", "1") == "1"
+PERF_TRACEMALLOC = os.environ.get("PERF_TRACEMALLOC", "1") == "1"
+PERF_TRACEMALLOC_TOP = int(os.environ.get("PERF_TRACEMALLOC_TOP", "1"))
+PERF_REPORT_PATH = os.environ.get("PERF_REPORT_PATH", "").strip()
+
+
+def _read_proc_io() -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    try:
+        with open("/proc/self/io", "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if ":" not in line:
+                    continue
+                k, v = line.split(":", 1)
+                try:
+                    out[k.strip()] = int(v.strip())
+                except ValueError:
+                    continue
+    except FileNotFoundError:
+        return {}
+    return out
+
+
+def _read_proc_stat_cpu() -> Dict[str, List[int]]:
+    data: Dict[str, List[int]] = {}
+    try:
+        with open("/proc/stat", "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if not line.startswith("cpu"):
+                    continue
+                parts = line.split()
+                key = parts[0]
+                try:
+                    nums = [int(x) for x in parts[1:]]
+                except ValueError:
+                    continue
+                data[key] = nums
+    except FileNotFoundError:
+        return {}
+    return data
+
+
+def _cpu_usage_delta(start: Dict[str, List[int]], end: Dict[str, List[int]]) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for k, s in start.items():
+        e = end.get(k)
+        if not e or len(s) < 4 or len(e) < 4:
+            continue
+        total_s = sum(s)
+        total_e = sum(e)
+        idle_s = s[3] + (s[4] if len(s) > 4 else 0)
+        idle_e = e[3] + (e[4] if len(e) > 4 else 0)
+        total_d = total_e - total_s
+        idle_d = idle_e - idle_s
+        if total_d <= 0:
+            continue
+        out[k] = max(0.0, min(1.0, 1.0 - (idle_d / float(total_d))))
+    return out
+
+
+def _format_bytes(n: Optional[int]) -> str:
+    if n is None:
+        return "n/a"
+    n = int(n)
+    if n < 1024:
+        return f"{n} B"
+    for unit in ("KiB", "MiB", "GiB", "TiB"):
+        n /= 1024.0
+        if n < 1024.0:
+            return f"{n:.1f} {unit}"
+    return f"{n:.1f} PiB"
+
+
+class PerfTracker:
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self.phases: Dict[str, float] = {}
+        self.counts: Dict[str, int] = {}
+        self._t0 = 0.0
+        self._cpu0 = 0.0
+        self._r0 = None
+        self._io0: Dict[str, int] = {}
+        self._stat0: Dict[str, List[int]] = {}
+        self._tm_enabled = False
+        self._tm_snapshot = None
+
+    def start(self):
+        if not self.enabled:
+            return
+        self._t0 = time.perf_counter()
+        self._cpu0 = time.process_time()
+        self._r0 = resource.getrusage(resource.RUSAGE_SELF)
+        self._io0 = _read_proc_io()
+        self._stat0 = _read_proc_stat_cpu()
+        if PERF_TRACEMALLOC:
+            try:
+                import tracemalloc
+
+                tracemalloc.start(25)
+                self._tm_enabled = True
+            except Exception:
+                self._tm_enabled = False
+
+    def count(self, key: str, value: int):
+        if not self.enabled:
+            return
+        self.counts[key] = int(value)
+
+    @contextlib.contextmanager
+    def phase(self, name: str):
+        if not self.enabled:
+            yield
+            return
+        t0 = time.perf_counter()
+        try:
+            yield
+        finally:
+            dt = time.perf_counter() - t0
+            self.phases[name] = self.phases.get(name, 0.0) + dt
+
+    def finish(self) -> Dict[str, Any]:
+        if not self.enabled:
+            return {}
+        t1 = time.perf_counter()
+        cpu1 = time.process_time()
+        r1 = resource.getrusage(resource.RUSAGE_SELF)
+        io1 = _read_proc_io()
+        stat1 = _read_proc_stat_cpu()
+        cpu_usage = _cpu_usage_delta(self._stat0, stat1)
+
+        tm_stats = None
+        if self._tm_enabled:
+            try:
+                import tracemalloc
+
+                cur, peak = tracemalloc.get_traced_memory()
+                tm_stats = {"current": cur, "peak": peak}
+                if PERF_TRACEMALLOC_TOP > 0:
+                    snap = tracemalloc.take_snapshot()
+                    top = snap.statistics("filename")[:PERF_TRACEMALLOC_TOP]
+                    tm_stats["top"] = [(str(s.traceback[0]), s.size, s.count) for s in top]
+                tracemalloc.stop()
+            except Exception:
+                tm_stats = None
+
+        data = {
+            "wall_time": t1 - self._t0,
+            "cpu_time": cpu1 - self._cpu0,
+            "cpu_usage": cpu_usage,
+            "rusage_start": self._r0,
+            "rusage_end": r1,
+            "io_start": self._io0,
+            "io_end": io1,
+            "tracemalloc": tm_stats,
+        }
+        return data
+
+
+def _render_perf_report(data: Dict[str, Any], phases: Dict[str, float], counts: Dict[str, int]) -> str:
+    if not data:
+        return ""
+    wall = data.get("wall_time", 0.0) or 0.0
+    cpu = data.get("cpu_time", 0.0) or 0.0
+    cpu_ratio = (cpu / wall) if wall > 0 else 0.0
+    cpu_pct = cpu_ratio * 100.0
+
+    r0 = data.get("rusage_start")
+    r1 = data.get("rusage_end")
+    maxrss = None
+    if r1:
+        maxrss = int(r1.ru_maxrss) * 1024  # Linux reports KiB
+
+    io0 = data.get("io_start", {})
+    io1 = data.get("io_end", {})
+    io_delta = {k: (io1.get(k, 0) - io0.get(k, 0)) for k in set(io0) | set(io1)}
+
+    lines: List[str] = []
+    lines.append("PERF SUMMARY")
+    lines.append(f"wall={wall:.3f}s cpu={cpu:.3f}s cpu/wall={cpu_pct:.1f}%")
+    lines.append(f"maxrss={_format_bytes(maxrss)} cores={os.cpu_count() or 0} loadavg={getattr(os, 'getloadavg', lambda: ('n/a',) * 3)()}")
+    if io_delta:
+        rbytes = io_delta.get("read_bytes", 0)
+        wbytes = io_delta.get("write_bytes", 0)
+        lines.append(f"io read={_format_bytes(rbytes)} write={_format_bytes(wbytes)} rchar={_format_bytes(io_delta.get('rchar', 0))} wchar={_format_bytes(io_delta.get('wchar', 0))}")
+
+    cpu_usage = data.get("cpu_usage", {})
+    if cpu_usage:
+        total = cpu_usage.get("cpu")
+        if total is not None:
+            lines.append(f"cpu_total_util={total*100.0:.1f}%")
+        per_core = [f"{k}:{v*100.0:.0f}%" for k, v in sorted(cpu_usage.items()) if k != "cpu"]
+        if per_core:
+            lines.append("cpu_per_core=" + ",".join(per_core))
+
+    if phases:
+        lines.append("PHASES")
+        for name, dt in sorted(phases.items(), key=lambda x: x[1], reverse=True):
+            pct = (dt / wall * 100.0) if wall > 0 else 0.0
+            lines.append(f"{name}={dt:.3f}s ({pct:.1f}%)")
+
+    if counts:
+        lines.append("COUNTS")
+        for k, v in counts.items():
+            lines.append(f"{k}={v}")
+        if "hadith_lines" in counts and wall > 0:
+            lines.append(f"throughput_lines_per_s={counts['hadith_lines']/wall:.1f}")
+
+    tm = data.get("tracemalloc")
+    if tm:
+        lines.append(f"tracemalloc_current={_format_bytes(tm.get('current'))} peak={_format_bytes(tm.get('peak'))}")
+        top = tm.get("top") or []
+        if top:
+            lines.append("tracemalloc_top")
+            for loc, size, count in top:
+                lines.append(f"{loc} size={_format_bytes(size)} count={count}")
+
+    return "\n".join(lines)
 
 # =========================
 # HADITH NUMBER PARSING (input txt)
@@ -1145,90 +1371,140 @@ def write_results_to_db(
 
 
 def main():
-    if not HADITH_LINES_PATH.exists():
-        raise FileNotFoundError(str(HADITH_LINES_PATH))
+    tracker = PerfTracker(PERF_ENABLED)
+    tracker.start()
 
-    db_paths = sorted(glob.glob(DB_GLOB))  # erwartet: Liste von *.db Pfaden; leer wenn Pfad falsch oder keine .db Dateien
-    if not db_paths:
-        raise FileNotFoundError(DB_GLOB)
+    with tracker.phase("validate_inputs"):
+        if not HADITH_LINES_PATH.exists():
+            raise FileNotFoundError(str(HADITH_LINES_PATH))
 
-    db_paths = filter_compatible_db_paths(db_paths)
-    if not db_paths:
-        raise FileNotFoundError("No compatible DBs found for expected columns")
+    with tracker.phase("discover_db_paths"):
+        db_paths = sorted(glob.glob(DB_GLOB))  # erwartet: Liste von *.db Pfaden; leer wenn Pfad falsch oder keine .db Dateien
+        if not db_paths:
+            raise FileNotFoundError(DB_GLOB)
+        tracker.count("db_paths", len(db_paths))
+
+    with tracker.phase("filter_db_paths"):
+        db_paths = filter_compatible_db_paths(db_paths)
+        if not db_paths:
+            raise FileNotFoundError("No compatible DBs found for expected columns")
 
     global _PARQUET_MAP
-    _PARQUET_MAP, cache_stats = match_cache.build_parquet_cache_if_missing(
-        db_paths,
-        cache_dir=CACHE_DIR,
-        table=DB_TABLE,
-        id_col=DB_ID_COL,
-        text_col=DB_COL,
-        normalize_func=normalize_to_str,
-    )
+    with tracker.phase("build_parquet_cache"):
+        _PARQUET_MAP, cache_stats = match_cache.build_parquet_cache_if_missing(
+            db_paths,
+            cache_dir=CACHE_DIR,
+            table=DB_TABLE,
+            id_col=DB_ID_COL,
+            text_col=DB_COL,
+            normalize_func=normalize_to_str,
+        )
     if DEBUG:
         match_logging.log_cache_stats(
             hit=cache_stats.hit, built=cache_stats.built, total=cache_stats.total
         )
 
-    with HADITH_LINES_PATH.open("r", encoding="utf-8", errors="replace") as f:
-        raw_lines = [ln.rstrip("\n") for ln in f if ln.strip()]  # erwartet: viele Zeilen; jede beginnt typischerweise mit Hadith-Nummer
+    with tracker.phase("read_hadith_lines"):
+        with HADITH_LINES_PATH.open("r", encoding="utf-8", errors="replace") as f:
+            raw_lines = [ln.rstrip("\n") for ln in f if ln.strip()]  # erwartet: viele Zeilen; jede beginnt typischerweise mit Hadith-Nummer
+    tracker.count("hadith_lines", len(raw_lines))
 
     if EVAL_SAMPLE_SIZE is not None:
         eval_lines = raw_lines[: int(EVAL_SAMPLE_SIZE)]
     else:
         eval_lines = raw_lines
+    tracker.count("eval_lines", len(eval_lines))
 
     p0 = default_params()
-    best_p, best_objective, best_coverage, best_avg_hit = recursive_search(
-        hadith_lines=eval_lines,
-        db_paths=db_paths,
-        p0=p0,
-        depth=6,
-        dx_step=0.03,
-        dth_step=0.03,
-        dor_step=0.03,
-    )
+    with tracker.phase("param_search"):
+        best_p, best_objective, best_coverage, best_avg_hit = recursive_search(
+            hadith_lines=eval_lines,
+            db_paths=db_paths,
+            p0=p0,
+            depth=6,
+            dx_step=0.03,
+            dth_step=0.03,
+            dor_step=0.03,
+        )
 
     best_params_dict = params_to_dict(best_p)
-    OUT_BEST_PARAMS_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUT_BEST_PARAMS_JSON.write_text(
-        json.dumps(
-            {
-                "best_objective": best_objective,
-                "best_coverage": best_coverage,
-                "best_avg_hit": best_avg_hit,
-                "best_params": best_params_dict,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    with tracker.phase("write_best_params"):
+        OUT_BEST_PARAMS_JSON.parent.mkdir(parents=True, exist_ok=True)
+        OUT_BEST_PARAMS_JSON.write_text(
+            json.dumps(
+                {
+                    "best_objective": best_objective,
+                    "best_coverage": best_coverage,
+                    "best_avg_hit": best_avg_hit,
+                    "best_params": best_params_dict,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
-    out_conn, dbname_to_col, dbname_to_idcol = create_output_db(db_paths)
+    with tracker.phase("create_output_db"):
+        out_conn, dbname_to_col, dbname_to_idcol = create_output_db(db_paths)
 
-    with ProcessPoolExecutor(
-        max_workers=MAX_WORKERS,
-        initializer=_worker_init,
-        initargs=(db_paths, _PARQUET_MAP),
-    ) as ex:
-        all_results = list(
-            ex.map(match_one_hadith_all, raw_lines, [best_params_dict] * len(raw_lines))
-        )  # erwartet: all_results enthält pro Zeile hadith_id und (ggf.) matches
+    with tracker.phase("match_all"):
+        with ProcessPoolExecutor(
+            max_workers=MAX_WORKERS,
+            initializer=_worker_init,
+            initargs=(db_paths, _PARQUET_MAP),
+        ) as ex:
+            all_results = list(
+                ex.map(match_one_hadith_all, raw_lines, [best_params_dict] * len(raw_lines))
+            )  # erwartet: all_results enthält pro Zeile hadith_id und (ggf.) matches
+    tracker.count("results", len(all_results))
+    tracker.count("total_matches", sum(len(r.get("matches", [])) for r in all_results))
 
-    write_results_to_db(
-        conn=out_conn,
-        db_paths=db_paths,
-        dbname_to_col=dbname_to_col,
-        dbname_to_idcol=dbname_to_idcol,
-        results=all_results,
-    )
+    with tracker.phase("write_results"):
+        write_results_to_db(
+            conn=out_conn,
+            db_paths=db_paths,
+            dbname_to_col=dbname_to_col,
+            dbname_to_idcol=dbname_to_idcol,
+            results=all_results,
+        )
 
     out_conn.close()
 
     if DEBUG and PLOT_COVERAGE:
         _COVERAGE_TRACKER.plot()
 
+    perf_data = tracker.finish()
+    report = _render_perf_report(perf_data, tracker.phases, tracker.counts)
+    if report:
+        if PERF_REPORT_PATH:
+            with open(PERF_REPORT_PATH, "a", encoding="utf-8") as f:
+                f.write(report + "\n")
+        else:
+            print(report, file=sys.stderr)
+
 
 if __name__ == "__main__":
-    main()
+    if PERF_CPROFILE:
+        import cProfile
+        import pstats
+        import io as _io
+
+        prof = cProfile.Profile()
+        prof.enable()
+        try:
+            main()
+        finally:
+            prof.disable()
+            s = _io.StringIO()
+            sort_by = os.environ.get("PERF_CPROFILE_SORT", "tottime")
+            top_n = int(os.environ.get("PERF_CPROFILE_TOP", "30"))
+            ps = pstats.Stats(prof, stream=s).sort_stats(sort_by)
+            ps.print_stats(top_n)
+            out = "CPROFILE\n" + s.getvalue()
+            if PERF_REPORT_PATH:
+                with open(PERF_REPORT_PATH, "a", encoding="utf-8") as f:
+                    f.write(out + "\n")
+            else:
+                print(out, file=sys.stderr)
+    else:
+        main()

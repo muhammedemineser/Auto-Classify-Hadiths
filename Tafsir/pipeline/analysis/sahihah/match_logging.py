@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Tuple
 
-DEBUG_ENABLED = os.environ.get("DEBUG", "0") == "1"
+DEBUG_ENABLED = os.environ.get("DEBUG", "1") == "1"
 
 
 def _emit(msg: str) -> None:

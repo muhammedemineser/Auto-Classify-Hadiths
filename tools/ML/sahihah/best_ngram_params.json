@@ -1,0 +1,40 @@
+{
+  "best_avg_score": 0.0,
+  "best_params": {
+    "very_short": {
+      "x": 0.3,
+      "min_n": 2,
+      "max_n": 4,
+      "threshold": 0.7,
+      "order_threshold": 0.6
+    },
+    "short": {
+      "x": 0.25,
+      "min_n": 3,
+      "max_n": 8,
+      "threshold": 0.78,
+      "order_threshold": 0.7
+    },
+    "medium": {
+      "x": 0.2,
+      "min_n": 5,
+      "max_n": 15,
+      "threshold": 0.85,
+      "order_threshold": 0.8
+    },
+    "long": {
+      "x": 0.15,
+      "min_n": 8,
+      "max_n": 25,
+      "threshold": 0.88,
+      "order_threshold": 0.82
+    },
+    "very_long": {
+      "x": 0.1,
+      "min_n": 10,
+      "max_n": 30,
+      "threshold": 0.9,
+      "order_threshold": 0.85
+    }
+  }
+}

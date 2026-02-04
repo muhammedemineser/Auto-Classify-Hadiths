@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 
 IN_PATH = Path(
-    "/home/muhammed-emin-eser/desk/apps/classify/tools/sahihah/out_sittah.txt"
-)
+"/app/Tafsir/pipeline/analysis/sahihah/in_sittah.txt")
+
 OUT_PATH = Path(
-    "/home/muhammed-emin-eser/desk/apps/classify/tools/sahihah/sahihah_hadith_extracted_out_sittah.txt"
+    "/app/Tafsir/pipeline/analysis/sahihah/sahihah_hadith_extracted_in_sittah.txt"
 )
 
 # Matches the first "sequence-like" number at the beginning area of the line:
@@ -19,6 +19,18 @@ OUT_PATH = Path(
 NUM_RE = re.compile(r"^\s*([^\d]{0,80})\s*(\d{1,5})\b", re.UNICODE)
 KUTUB_LIST_MARKER = "\tKUTUBS="
 
+AL_OPT = r"(?:ال)?"
+KUTUB_PATTERNS = {
+    "Bukhari": rf"(?:{AL_OPT}بخاري|صحيح\s*{AL_OPT}بخاري|{AL_OPT}بخاري\s*في\s*صحيحه|{AL_OPT}بخاري\s*في\s*ال?صحيح)",
+    "Muslim": rf"(?:{AL_OPT}مسلم|صحيح\s*{AL_OPT}مسلم|{AL_OPT}مسلم\s*في\s*صحيحه|{AL_OPT}مسلم\s*في\s*ال?صحيح)",
+    "AbuDaud": rf"(?:أبو\s*داود|ابو\s*داود|سنن\s*أبي\s*داود|سنن\s*ابى\s*داود|سنن\s*ابو\s*داود)",
+    "Tirmizi": rf"(?:{AL_OPT}ترمذي|{AL_OPT}ترمذى|سنن\s*{AL_OPT}ترمذي|جامع\s*{AL_OPT}ترمذي|{AL_OPT}جامع\s*{AL_OPT}ترمذي|{AL_OPT}جامع\s*للترمذي|{AL_OPT}الجامع\s*للترمذي)",
+    "Nesai": rf"(?:{AL_OPT}نسائي|{AL_OPT}نسائى|سنن\s*{AL_OPT}نسائي|سنن\s*{AL_OPT}نسائى|{AL_OPT}مجتبى|{AL_OPT}سنن\s*الصغرى|السنن\s*الصغرى)",
+    "IbnMajah": rf"(?:ابن\s*ماجه|ابن\s*ماجة|سنن\s*ابن\s*ماجه|سنن\s*ابن\s*ماجة)",
+}
+KUTUB_PATTERNS_RE = {
+    key: re.compile(pattern, flags=re.UNICODE) for key, pattern in KUTUB_PATTERNS.items()
+}
 
 def extract_balanced_segment(s: str, start_idx: int, open_ch: str, close_ch: str):
     """
@@ -59,7 +71,14 @@ def split_kutub_list(line: str):
         return base, None
     return base, None
 
-
+def detect_kutub_list(line: str):
+    hits = []
+    for key, rx in KUTUB_PATTERNS_RE.items():
+        if rx.search(line):
+            hits.append(key)
+    if not hits:
+        return None
+    return sorted(set(hits))
 def extract_hadith_text(line: str):
     """
     Returns (hadith_number:int, hadith_text:str) or (None, None) if not parseable.
@@ -145,7 +164,8 @@ def main():
             num, hadith = extract_hadith_text(base_line)
             if num is None:
                 continue
-
+            if not kutub_list:
+                kutub_list = detect_kutub_list(base_line)
             # Sequence order must not decrease
             if last_num != -1 and num < last_num:
                 continue
