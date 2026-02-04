@@ -6,15 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-try:
-    import duckdb  # type: ignore
-except Exception:  # pragma: no cover
-    duckdb = None  # type: ignore
-
-try:
-    import pandas as pd  # type: ignore
-except Exception:  # pragma: no cover
-    pd = None  # type: ignore
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 
 @dataclass
@@ -37,26 +32,69 @@ def _ensure_cache_dir(cache_dir: Path) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _write_parquet(df, parquet_path: Path) -> None:
-    if pd is not None:
-        try:
-            df.to_parquet(parquet_path, index=False)
-            return
-        except Exception:
-            pass
-    if duckdb is None:
-        raise RuntimeError("duckdb is required to write parquet when pandas fails")
-    con = duckdb.connect()
+def _write_parquet(table: pa.Table, parquet_path: Path) -> None:
+    pq.write_table(table, parquet_path)
+
+
+def _coerce_to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
     try:
-        con.register("df", df)
-        con.execute(
-            f"COPY df TO '{str(parquet_path)}' (FORMAT PARQUET)"
-        )
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_parquet_table(
+    conn: sqlite3.Connection,
+    table_name: str,
+    id_col: str,
+    text_col: str,
+    normalize_func: Callable[[Any], str],
+) -> pa.Table:
+    cursor = conn.cursor()
+    cursor.execute(
+        f"SELECT {id_col} AS hadith_number_raw, {text_col} AS arabic_matn FROM {table_name}"
+    )
+
+    hadith_number_raw: List[str] = []
+    arabic_matn: List[str] = []
+    hadith_number: List[Optional[float]] = []
+    matn_norm: List[str] = []
+    token_count: List[int] = []
+
+    for raw_id, raw_text in cursor:
+        if raw_text is None:
+            continue
+        text = str(raw_text)
+        norm_value = normalize_func(text)
+        norm = "" if norm_value is None else str(norm_value)
+        hadith_number_raw.append(str(raw_id))
+        arabic_matn.append(text)
+        hadith_number.append(_coerce_to_float(raw_id))
+        matn_norm.append(norm)
+        token_count.append(len(norm.split()))
+
+    schema = pa.schema(
+        [
+            pa.field("hadith_number_raw", pa.string()),
+            pa.field("arabic_matn", pa.string()),
+            pa.field("hadith_number", pa.float64()),
+            pa.field("matn_norm", pa.string()),
+            pa.field("token_count", pa.int32()),
+        ]
+    )
+
+    return pa.Table.from_arrays(
+        [
+            pa.array(hadith_number_raw, type=pa.string()),
+            pa.array(arabic_matn, type=pa.string()),
+            pa.array(hadith_number, type=pa.float64()),
+            pa.array(matn_norm, type=pa.string()),
+            pa.array(token_count, type=pa.int32()),
+        ],
+        schema=schema,
+    )
 
 
 def build_parquet_cache_if_missing(
@@ -68,9 +106,6 @@ def build_parquet_cache_if_missing(
     text_col: str,
     normalize_func: Callable[[Any], str],
 ) -> Tuple[Dict[str, Path], CacheStats]:
-    if pd is None:
-        raise RuntimeError("pandas is required to build parquet cache")
-
     cache_root = cache_dir or _default_cache_dir()
     _ensure_cache_dir(cache_root)
 
@@ -81,84 +116,63 @@ def build_parquet_cache_if_missing(
         stats.total += 1
         parquet_path = parquet_path_for_db(db_path, cache_root)
         parquet_map[db_path] = parquet_path
+
         if parquet_path.exists():
-            if pd is not None:
-                try:
-                    pd.read_parquet(
-                        parquet_path,
-                        columns=[
-                            "hadith_number",
-                            "hadith_number_raw",
-                            "arabic_matn",
-                            "matn_norm",
-                            "token_count",
-                        ],
-                    )
-                    stats.hit += 1
-                    continue
-                except Exception:
-                    pass
+            try:
+                pq.read_table(
+                    parquet_path,
+                    columns=[
+                        "hadith_number",
+                        "hadith_number_raw",
+                        "arabic_matn",
+                        "matn_norm",
+                        "token_count",
+                    ],
+                )
+                stats.hit += 1
+                continue
+            except Exception:
+                pass
 
         conn = sqlite3.connect(db_path)
         try:
-            df = pd.read_sql_query(
-                f"SELECT {id_col} AS hadith_number_raw, {text_col} AS arabic_matn FROM {table}",
-                conn,
+            table_data = _build_parquet_table(
+                conn, table, id_col, text_col, normalize_func
             )
         finally:
             conn.close()
 
-        if df.empty:
-            _write_parquet(df, parquet_path)
-            stats.built += 1
-            continue
-
-        df = df.dropna(subset=["arabic_matn"])
-        df["arabic_matn"] = df["arabic_matn"].astype(str)
-        df["hadith_number_raw"] = df["hadith_number_raw"].astype(str)
-
-        df["hadith_number"] = pd.to_numeric(
-            df["hadith_number_raw"], errors="coerce"
-        )
-        df["matn_norm"] = df["arabic_matn"].map(normalize_func)
-        df["matn_norm"] = df["matn_norm"].fillna("").astype(str)
-        df["token_count"] = df["matn_norm"].str.split().map(len)
-
-        _write_parquet(df, parquet_path)
+        _write_parquet(table_data, parquet_path)
         stats.built += 1
 
     return parquet_map, stats
 
 
 class ParquetReader:
+    _SCAN_COLUMNS = [
+        "hadith_number",
+        "hadith_number_raw",
+        "arabic_matn",
+        "matn_norm",
+        "token_count",
+    ]
+
+    _EMPTY_SCHEMA = pa.schema(
+        [
+            pa.field("hadith_number", pa.float64()),
+            pa.field("hadith_number_raw", pa.string()),
+            pa.field("arabic_matn", pa.string()),
+            pa.field("matn_norm", pa.string()),
+            pa.field("token_count", pa.int32()),
+        ]
+    )
+
     def __init__(self, parquet_map: Dict[str, Path], use_duckdb: bool = True):
         self.parquet_map = parquet_map
-        self.use_duckdb = bool(use_duckdb and duckdb is not None)
-        self._duck_con = duckdb.connect() if self.use_duckdb else None
-        self._df_cache: Dict[str, "pd.DataFrame"] = {}
+        self._dataset_cache: Dict[str, ds.Dataset] = {}
 
     def close(self) -> None:
-        if self._duck_con is not None:
-            try:
-                self._duck_con.close()
-            except Exception:
-                pass
-            self._duck_con = None
-        self._df_cache.clear()
-
-    def _load_df(self, db_path: str):
-        if pd is None:
-            raise RuntimeError("pandas is required for non-duckdb cache reads")
-        cached = self._df_cache.get(db_path)
-        if cached is not None:
-            return cached
-        parquet_path = self.parquet_map[db_path]
-        df = pd.read_parquet(
-            parquet_path,
-            columns=["hadith_number", "hadith_number_raw", "arabic_matn", "matn_norm"],
-        )
-        self._df_cache[db_path] = df
-        return df
+        self._dataset_cache.clear()
 
     def fetch(
         self,
@@ -167,35 +181,69 @@ class ParquetReader:
         *,
         require_all: bool,
         limit: int,
-    ):
-        parquet_path = self.parquet_map[db_path]
+    ) -> pa.Table:
+        if limit <= 0:
+            return self._empty_table()
+        dataset = self._dataset_for_db(db_path)
+        scanner = dataset.scanner(columns=self._SCAN_COLUMNS, use_threads=True)
+        batches: List[pa.Table] = []
+        total = 0
+
+        for record_batch in scanner.to_batches():
+            if total >= limit:
+                break
+            batch_table = pa.Table.from_batches([record_batch])
+            filtered = self._filter_table(batch_table, anchors, require_all)
+            if filtered.num_rows == 0:
+                continue
+
+            remaining = limit - total
+            if filtered.num_rows > remaining:
+                filtered = filtered.slice(0, remaining)
+
+            batches.append(filtered)
+            total += filtered.num_rows
+
+        if not batches:
+            return self._empty_table()
+
+        return pa.concat_tables(batches)
+
+    def _dataset_for_db(self, db_path: str) -> ds.Dataset:
+        dataset = self._dataset_cache.get(db_path)
+        if dataset is None:
+            dataset = ds.dataset(str(self.parquet_map[db_path]), format="parquet")
+            self._dataset_cache[db_path] = dataset
+        return dataset
+
+    def _empty_table(self) -> pa.Table:
+        return pa.Table.from_arrays(
+            [
+                pa.array([], type=pa.float64()),
+                pa.array([], type=pa.string()),
+                pa.array([], type=pa.string()),
+                pa.array([], type=pa.string()),
+                pa.array([], type=pa.int32()),
+            ],
+            schema=self._EMPTY_SCHEMA,
+        )
+
+    def _filter_table(
+        self, table: pa.Table, anchors: List[str], require_all: bool
+    ) -> pa.Table:
         if not anchors:
-            where_sql = ""
-            params: List[Any] = [limit]
-        else:
-            op = " AND " if require_all else " OR "
-            conds = ["matn_norm LIKE ?"] * len(anchors)
-            where_sql = "WHERE " + op.join(conds)
-            params = [f"%{a}%" for a in anchors] + [limit]
-
-        if self.use_duckdb:
-            query = (
-                "SELECT hadith_number, hadith_number_raw, arabic_matn, matn_norm "
-                f"FROM parquet_scan('{str(parquet_path)}') {where_sql} LIMIT ?"
-            )
-            return self._duck_con.execute(query, params).df()
-
-        df = self._load_df(db_path)
-        if not anchors:
-            return df.head(limit).copy()
-
+            return table
         mask = None
         for anchor in anchors:
-            m = df["matn_norm"].str.contains(anchor, regex=False, na=False)
+            if not anchor:
+                continue
+            contains = pc.match_substring(table["matn_norm"], anchor)
             if mask is None:
-                mask = m
+                mask = contains
             else:
-                mask = (mask & m) if require_all else (mask | m)
+                mask = pc.and_(mask, contains) if require_all else pc.or_(mask, contains)
+
         if mask is None:
-            return df.head(limit).copy()
-        return df[mask].head(limit).copy()
+            return table
+
+        return table.filter(mask)

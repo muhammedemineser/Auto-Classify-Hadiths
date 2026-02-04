@@ -52,9 +52,9 @@ MAX_WORKERS = os.cpu_count() or 2
 
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", "/app/tools/sahihah/cache"))
 USE_DUCKDB = os.environ.get("USE_DUCKDB", "1") == "1"
-ENABLE_STANZA = os.environ.get("ENABLE_STANZA", "0") == "1"
-ENABLE_SEM_RERANK = os.environ.get("ENABLE_SEM_RERANK", "0") == "1"
-DEBUG = os.environ.get("DEBUG", "0") == "1"
+ENABLE_STANZA = os.environ.get("ENABLE_STANZA", "1") == "1"
+ENABLE_SEM_RERANK = os.environ.get("ENABLE_SEM_RERANK", "1") == "1"
+DEBUG = os.environ.get("DEBUG", "1") == "1"
 PLOT_COVERAGE = os.environ.get("PLOT_COVERAGE", "0") == "1"
 
 MIN_CANDS = int(os.environ.get("MIN_CANDS", "25"))
@@ -681,10 +681,10 @@ def fetch_candidates_parquet(
 
     and_rows = []
     if strong_norm:
-        df = _WORKER_CACHE.fetch(
+        table = _WORKER_CACHE.fetch(
             db_path, strong_norm, require_all=True, limit=limit
         )
-        and_rows = df.to_dict(orient="records")
+        and_rows = table.to_pylist()
 
     filtered_and = []
     for r in and_rows:
@@ -696,10 +696,10 @@ def fetch_candidates_parquet(
 
     or_rows = []
     if len(filtered_and) < MIN_CANDS:
-        df = _WORKER_CACHE.fetch(
+        table = _WORKER_CACHE.fetch(
             db_path, top_norm, require_all=False, limit=limit
         )
-        or_rows = df.to_dict(orient="records")
+        or_rows = table.to_pylist()
 
     filtered_or = []
     for r in or_rows:
@@ -713,8 +713,8 @@ def fetch_candidates_parquet(
 
     fallback_rows = []
     if len(merged) < MIN_CANDS:
-        df = _WORKER_CACHE.fetch(db_path, [], require_all=False, limit=limit)
-        fallback_rows = df.to_dict(orient="records")
+        table = _WORKER_CACHE.fetch(db_path, [], require_all=False, limit=limit)
+        fallback_rows = table.to_pylist()
         for r in fallback_rows:
             r["phase"] = "fallback"
             r["order_ok"] = True

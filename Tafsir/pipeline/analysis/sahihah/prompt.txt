@@ -1,0 +1,25 @@
+
+Platzierung:
+- Am Anfang des Skripts: globaler Start-Timer
+- Am Ende des Skripts: globaler End-Timer + Gesamtlaufzeit
+- Vor und nach:
+- Hauptschleifen
+- datenintensiven Abschnitten
+- DB-Reads
+- Text-Vergleichen
+- In inneren Schleifen **nur aggregiert**, niemals pro Element printen
+
+Output-Anforderungen:
+- Gib **das vollständige instrumentierte Skript** zurück
+- Keine Erklärungen
+- Keine Kommentare außerhalb des Codes
+- Keine Meta-Texte
+- Keine Hinweise
+
+Ziel:
+Nach Ausführung des Skripts sollen allein anhand der `print`-Ausgaben eindeutig erkennbar sein:
+- welche Code-Abschnitte die meiste Zeit kosten
+- ob der Engpass CPU-, I/O- oder Loop-bedingt ist
+- wie sich Laufzeit zur Datenmenge verhält
+
+Beginne erst mit dem Einbau der Instrumentierung, nachdem du den gesamten Code vollständig analysiert hast.
