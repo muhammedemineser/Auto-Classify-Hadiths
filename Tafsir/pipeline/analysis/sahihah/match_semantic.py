@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,13 +10,29 @@ try:
     from sentence_transformers import SentenceTransformer  # type: ignore
     from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 except Exception:  # pragma: no cover
-    ImportError("Please install sentence-transformers and scikit-learn to use SemanticReranker.")
+    SentenceTransformer = None
+    cosine_similarity = None
 
 
 @dataclass
 class SemanticConfig:
     model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     cache_path: Path = Path("/app/tools/sahihah/cache/semantic_cache.db")
+
+
+def _ensure_hf_cache_env() -> Path:
+    cache_root = Path(os.environ.get("HF_CACHE_DIR", "/work/.cache/huggingface"))
+    if not cache_root.exists():
+        cache_root = Path("/app/tools/sahihah/cache/huggingface")
+    cache_root.mkdir(parents=True, exist_ok=True)
+
+    os.environ.setdefault("HF_HOME", str(cache_root))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_root / "transformers"))
+    os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(cache_root / "sentence_transformers"))
+    token = os.environ.get("HF_TOKEN")
+    if token and not os.environ.get("HUGGINGFACE_HUB_TOKEN"):
+        os.environ["HUGGINGFACE_HUB_TOKEN"] = token
+    return cache_root
 
 
 class SemanticReranker:
@@ -47,7 +64,19 @@ class SemanticReranker:
             return
         if SentenceTransformer is None:
             raise RuntimeError("sentence-transformers is not available")
-        self._model = SentenceTransformer(self.config.model_name)
+        cache_root = _ensure_hf_cache_env()
+        local_only = os.environ.get("HF_HUB_OFFLINE") == "1"
+        try:
+            self._model = SentenceTransformer(
+                self.config.model_name,
+                cache_folder=os.environ.get("SENTENCE_TRANSFORMERS_HOME"),
+                local_files_only=local_only,
+            )
+        except TypeError:
+            self._model = SentenceTransformer(
+                self.config.model_name,
+                cache_folder=os.environ.get("SENTENCE_TRANSFORMERS_HOME"),
+            )
 
     def _cache_get(self, hadith_id: int, db_path: str, hadith_number: str) -> Optional[float]:
         cur = self._conn.cursor()

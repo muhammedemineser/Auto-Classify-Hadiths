@@ -48,6 +48,35 @@ def log_candidate_flow(
     _emit(f"- Final: {final_count}")
 
 
+def log_candidate_flow_ir(
+    hadith_id: int,
+    *,
+    bm25_count: int,
+    final_count: int,
+) -> None:
+    if not DEBUG_ENABLED:
+        return
+    section(f"Candidate Flow {hadith_id}", "🔍")
+    _emit(f"- BM25: {bm25_count}")
+    _emit(f"- Final: {final_count}")
+
+
+def log_candidate_compare(
+    hadith_id: int,
+    *,
+    ir_count: int,
+    legacy_count: int,
+) -> None:
+    if not DEBUG_ENABLED:
+        return
+    section(f"Candidate Compare {hadith_id}", "🧪")
+    _emit(f"- IR candidates: {ir_count}")
+    _emit(f"- Legacy candidates: {legacy_count}")
+    if legacy_count > 0:
+        reduction = 1.0 - (ir_count / float(legacy_count))
+        _emit(f"- Reduction: {reduction * 100:.1f}%")
+
+
 def log_cache_stats(hit: int, built: int, total: int) -> None:
     if not DEBUG_ENABLED:
         return

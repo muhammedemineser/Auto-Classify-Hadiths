@@ -3,10 +3,15 @@
 
 import re
 import json
+import os
 from pathlib import Path
 
 IN_PATH = Path(
-"/app/Tafsir/pipeline/analysis/sahihah/in_sittah.txt")
+    os.environ.get(
+        "IN_SITTAH_PATH",
+        "/app/Tafsir/pipeline/analysis/sahihah/in_sittah.txt",
+    )
+)
 
 OUT_PATH = Path(
     "/app/Tafsir/pipeline/analysis/sahihah/sahihah_hadith_extracted_in_sittah.txt"

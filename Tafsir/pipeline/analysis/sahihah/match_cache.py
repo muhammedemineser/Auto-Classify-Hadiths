@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -191,6 +192,9 @@ def build_parquet_cache_if_missing(
     return parquet_map, stats
 
 
+ROW_IDX_COL = "_row_idx"
+
+
 class ParquetReader:
     _BASE_COLUMNS = [
         "hadith_number",
@@ -213,9 +217,15 @@ class ParquetReader:
     def __init__(self, parquet_map: Dict[str, Path], use_duckdb: bool = True):
         self.parquet_map = parquet_map
         self._dataset_cache: Dict[str, ds.Dataset] = {}
+        self._pf_cache: Dict[str, pq.ParquetFile] = {}
+        self._row_group_offsets: Dict[str, List[Tuple[int, int, int]]] = {}
+        self._row_counts: Dict[str, int] = {}
 
     def close(self) -> None:
         self._dataset_cache.clear()
+        self._pf_cache.clear()
+        self._row_group_offsets.clear()
+        self._row_counts.clear()
 
     def fetch(
         self,
@@ -263,6 +273,37 @@ class ParquetReader:
             self._dataset_cache[db_path] = dataset
         return dataset
 
+    def _parquet_file_for_db(self, db_path: str) -> pq.ParquetFile:
+        pf = self._pf_cache.get(db_path)
+        if pf is None:
+            pf = pq.ParquetFile(str(self.parquet_map[db_path]))
+            self._pf_cache[db_path] = pf
+        return pf
+
+    def _row_group_offsets_for_db(self, db_path: str) -> List[Tuple[int, int, int]]:
+        offsets = self._row_group_offsets.get(db_path)
+        if offsets is not None:
+            return offsets
+        pf = self._parquet_file_for_db(db_path)
+        offsets = []
+        offset = 0
+        for rg in range(pf.num_row_groups):
+            count = pf.metadata.row_group(rg).num_rows
+            offsets.append((offset, offset + count, rg))
+            offset += count
+        self._row_group_offsets[db_path] = offsets
+        self._row_counts[db_path] = offset
+        return offsets
+
+    def _row_count_for_db(self, db_path: str) -> int:
+        count = self._row_counts.get(db_path)
+        if count is not None:
+            return count
+        offsets = self._row_group_offsets_for_db(db_path)
+        if not offsets:
+            return 0
+        return offsets[-1][1]
+
     def _empty_table(self, extra_columns: Optional[List[str]] = None) -> pa.Table:
         fields = list(self._BASE_SCHEMA)
         arrays: List[pa.Array] = [
@@ -284,6 +325,76 @@ class ParquetReader:
                     arrays.append(pa.array([], type=pa.string()))
         schema = pa.schema(fields)
         return pa.Table.from_arrays(arrays, schema=schema)
+
+    def fetch_rows_by_index(
+        self,
+        db_path: str,
+        indices: List[int],
+        *,
+        extra_columns: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not indices:
+            return []
+        ordered: List[int] = []
+        seen = set()
+        for idx in indices:
+            if idx is None:
+                continue
+            try:
+                idx_int = int(idx)
+            except (TypeError, ValueError):
+                continue
+            if idx_int < 0 or idx_int in seen:
+                continue
+            seen.add(idx_int)
+            ordered.append(idx_int)
+        if not ordered:
+            return []
+        total_rows = self._row_count_for_db(db_path)
+        ordered = [i for i in ordered if i < total_rows]
+        if not ordered:
+            return []
+        sorted_indices = sorted(ordered)
+        table = self._read_rows_by_sorted_indices(
+            db_path, sorted_indices, extra_columns=extra_columns
+        )
+        rows = table.to_pylist()
+        row_map = {r.get(ROW_IDX_COL): r for r in rows}
+        return [row_map[i] for i in ordered if i in row_map]
+
+    def _read_rows_by_sorted_indices(
+        self,
+        db_path: str,
+        sorted_indices: List[int],
+        *,
+        extra_columns: Optional[List[str]] = None,
+    ) -> pa.Table:
+        if not sorted_indices:
+            return self._empty_table(extra_columns)
+        pf = self._parquet_file_for_db(db_path)
+        columns = list(self._BASE_COLUMNS)
+        if extra_columns:
+            columns.extend([c for c in extra_columns if c not in columns])
+        offsets = self._row_group_offsets_for_db(db_path)
+        tables: List[pa.Table] = []
+        for start, end, rg in offsets:
+            if sorted_indices[0] >= end:
+                continue
+            if sorted_indices[-1] < start:
+                break
+            lo = bisect.bisect_left(sorted_indices, start)
+            hi = bisect.bisect_left(sorted_indices, end, lo)
+            if lo >= hi:
+                continue
+            local = [idx - start for idx in sorted_indices[lo:hi]]
+            rg_table = pf.read_row_group(rg, columns=columns)
+            sel = rg_table.take(pa.array(local, type=pa.int64()))
+            row_idx = pa.array([start + i for i in local], type=pa.int64())
+            sel = sel.append_column(ROW_IDX_COL, row_idx)
+            tables.append(sel)
+        if not tables:
+            return self._empty_table(extra_columns)
+        return pa.concat_tables(tables)
 
     def _filter_table(
         self, table: pa.Table, anchors: List[str], require_all: bool

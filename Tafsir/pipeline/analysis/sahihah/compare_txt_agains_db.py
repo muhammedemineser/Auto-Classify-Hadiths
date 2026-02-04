@@ -10,6 +10,7 @@ import math
 import time
 import resource
 import contextlib
+import multiprocessing as mp
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
@@ -20,7 +21,7 @@ import sys
 
 sys.path.insert(0, "/app")
 from Tafsir.pipeline.analysis.compare_tafsir_texts import normalize
-from Tafsir.pipeline.analysis.sahihah import match_cache, match_logging, match_semantic, match_stanza
+from Tafsir.pipeline.analysis.sahihah import match_cache, match_ir, match_logging, match_semantic, match_stanza
 
 # =========================
 # INPUT / OUTPUT PATHS
@@ -45,9 +46,9 @@ OUT_MATCHES_DB = Path(
     "/app/tools/fetch_ketab/sahihah/in_sittah_matches.db"
 )
 
-EVAL_SAMPLE_SIZE = None
+EVAL_SAMPLE_SIZE = 30
 SQL_CANDIDATE_LIMIT = 2500
-MAX_WORKERS = os.cpu_count() or 2
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", str(os.cpu_count() or 2)))
 
 # =========================
 # CONFIG FLAGS
@@ -69,6 +70,23 @@ ANCHOR_TOP_M = int(os.environ.get("ANCHOR_TOP_M", "10"))
 ANCHOR_STRIDE = int(os.environ.get("ANCHOR_STRIDE", "25"))
 ORDER_PRECHECK_PENALTY = float(os.environ.get("ORDER_PRECHECK_PENALTY", "0.9"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "100"))
+MAX_FALLBACK_CANDS = int(os.environ.get("MAX_FALLBACK_CANDS", "800"))
+FALLBACK_SAFE_FILTER_AT = int(
+    os.environ.get("FALLBACK_SAFE_FILTER_AT", str(MAX_FALLBACK_CANDS))
+)
+FALLBACK_SAFE_TOKEN_FILTER = os.environ.get("FALLBACK_SAFE_TOKEN_FILTER", "1") == "1"
+
+# =========================
+# CANDIDATE GENERATION (IR)
+# =========================
+
+CANDIDATE_PIPELINE = os.environ.get("CANDIDATE_PIPELINE", "ir").strip().lower()
+USE_IR_CANDIDATES = CANDIDATE_PIPELINE in {"ir", "bm25"}
+CANDIDATE_TOPK = int(os.environ.get("CANDIDATE_TOPK", "200"))
+CANDIDATE_MIN_TOPK = int(os.environ.get("CANDIDATE_MIN_TOPK", str(MIN_CANDS)))
+BM25_K1 = float(os.environ.get("BM25_K1", "1.5"))
+BM25_B = float(os.environ.get("BM25_B", "0.75"))
+BM25_PREBUILD = os.environ.get("BM25_PREBUILD", "1") == "1"
 
 # =========================
 # PERFORMANCE / PROFILING
@@ -870,6 +888,7 @@ _WORKER_DB_PATHS: List[str] = []
 _WORKER_CONNS: Dict[str, sqlite3.Connection] = {}
 _WORKER_DB_OK: Dict[str, bool] = {}
 _WORKER_CACHE: Optional[match_cache.ParquetReader] = None
+_WORKER_BM25: Optional[Dict[str, match_ir.BM25Index]] = None
 _WORKER_STANZA: Optional[match_stanza.StanzaCache] = None
 _WORKER_SEM: Optional[match_semantic.SemanticReranker] = None
 _COVERAGE_TRACKER = match_logging.CoverageTracker()
@@ -877,12 +896,33 @@ _EVAL_COUNTER = 0
 _PARQUET_MAP: Dict[str, Path] = {}
 
 
+def _init_bm25_indexes(db_paths: List[str], parquet_map: Dict[str, Path]) -> None:
+    global _WORKER_BM25
+    if _WORKER_BM25 is not None:
+        return
+    if not USE_IR_CANDIDATES:
+        _WORKER_BM25 = None
+        return
+    try:
+        _WORKER_BM25 = match_ir.build_bm25_indexes(
+            db_paths=db_paths,
+            parquet_map=parquet_map,
+            config=match_ir.BM25Config(k1=BM25_K1, b=BM25_B),
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "BM25 candidate generation is enabled but rank_bm25 is not available. "
+            "Install rank-bm25 or set CANDIDATE_PIPELINE=legacy."
+        ) from exc
+
+
 def _worker_init(db_paths: List[str], parquet_map: Dict[str, Path]):
-    global _WORKER_DB_PATHS, _WORKER_CONNS, _WORKER_DB_OK, _WORKER_CACHE, _WORKER_STANZA, _WORKER_SEM
+    global _WORKER_DB_PATHS, _WORKER_CONNS, _WORKER_DB_OK, _WORKER_CACHE, _WORKER_BM25, _WORKER_STANZA, _WORKER_SEM
     _WORKER_DB_PATHS = db_paths  # erwartet: enthält Pfade zu allen *.db Dateien
     _WORKER_CONNS = {}
     _WORKER_DB_OK = {dbp: True for dbp in db_paths}
     _WORKER_CACHE = match_cache.ParquetReader(parquet_map, use_duckdb=USE_DUCKDB)
+    _init_bm25_indexes(db_paths, parquet_map)
     if ENABLE_STANZA:
         try:
             _WORKER_STANZA = match_stanza.StanzaCache(
@@ -971,6 +1011,7 @@ def _append_stage(
     seen: set,
     *,
     filter_order_ok: bool,
+    keep_mask: Optional[List[bool]] = None,
 ) -> int:
     count = 0
     hn_raw = cols.get("hadith_number_raw", [])
@@ -980,6 +1021,10 @@ def _append_stage(
     ngram_cols = {n: cols.get(_ngram_col(n), []) for n in needed_ns}
 
     for i in range(len(hn_raw)):
+        if keep_mask is not None:
+            keep = keep_mask[i] if i < len(keep_mask) else True
+            if not keep:
+                continue
         ok = order_ok[i] if i < len(order_ok) else True
         if filter_order_ok and not ok:
             continue
@@ -1022,7 +1067,13 @@ def fetch_candidates_parquet(
 
     needed_ns = sorted({n for n in needed_ns if n > 0})
     extra_cols = [_ngram_col(n) for n in needed_ns]
-    base_cols = ["hadith_number_raw", "hadith_number", "arabic_matn", "matn_norm"]
+    base_cols = [
+        "hadith_number_raw",
+        "hadith_number",
+        "arabic_matn",
+        "matn_norm",
+        "token_count",
+    ]
     all_cols = base_cols + extra_cols
 
     strong_norm = [prep_anchor_for_search(a) for a in strong_anchors if a]
@@ -1083,17 +1134,33 @@ def fetch_candidates_parquet(
 
     fallback_raw = 0
     fallback_kept = 0
+    fallback_limit = 0
     if len(batch) < MIN_CANDS:
+        fallback_limit = limit
+        if MAX_FALLBACK_CANDS > 0:
+            fallback_limit = min(limit, MAX_FALLBACK_CANDS)
         table = _WORKER_CACHE.fetch(
             db_path,
             [],
             require_all=False,
-            limit=limit,
+            limit=fallback_limit,
             extra_columns=extra_cols,
         )
         cols = _table_to_columns(table, all_cols)
         fallback_raw = len(cols.get("hadith_number_raw", []))
         order_ok = [True] * fallback_raw
+        keep_mask = None
+        if (
+            FALLBACK_SAFE_TOKEN_FILTER
+            and FALLBACK_SAFE_FILTER_AT > 0
+            and fallback_raw > FALLBACK_SAFE_FILTER_AT
+        ):
+            min_n = min(needed_ns) if needed_ns else 1
+            token_counts = cols.get("token_count", [])
+            keep_mask = [
+                (token_counts[i] if i < len(token_counts) else 0) >= min_n
+                for i in range(fallback_raw)
+            ]
         fallback_kept = _append_stage(
             batch,
             cols,
@@ -1102,6 +1169,7 @@ def fetch_candidates_parquet(
             needed_ns,
             seen,
             filter_order_ok=False,
+            keep_mask=keep_mask,
         )
 
     counts = {
@@ -1112,6 +1180,62 @@ def fetch_candidates_parquet(
         "and_raw": and_raw,
         "or_raw": or_raw,
         "fallback_raw": fallback_raw,
+        "fallback_limit": fallback_limit,
+    }
+    return batch, counts
+
+
+def fetch_candidates_bm25(
+    db_path: str,
+    *,
+    query_tokens: List[str],
+    strong_anchors: List[str],
+    topk: int,
+    needed_ns: List[int],
+) -> Tuple[CandidateBatch, Dict[str, int]]:
+    if _WORKER_CACHE is None or _WORKER_BM25 is None:
+        return _init_candidate_batch(needed_ns), {
+            "bm25": 0,
+            "bm25_raw": 0,
+            "dedup": 0,
+        }
+
+    index = _WORKER_BM25.get(db_path)
+    if index is None or not query_tokens:
+        return _init_candidate_batch(needed_ns), {
+            "bm25": 0,
+            "bm25_raw": 0,
+            "dedup": 0,
+        }
+
+    needed_ns = sorted({n for n in needed_ns if n > 0})
+    extra_cols = [_ngram_col(n) for n in needed_ns]
+    strong_norm = [prep_anchor_for_search(a) for a in strong_anchors if a]
+
+    topk = max(int(topk), int(MIN_CANDS), int(CANDIDATE_MIN_TOPK))
+    topk = min(topk, int(index.doc_count))
+    bm25_indices = index.topk(query_tokens, topk)
+
+    rows = _WORKER_CACHE.fetch_rows_by_index(
+        db_path, bm25_indices, extra_columns=extra_cols
+    )
+
+    batch = _init_candidate_batch(needed_ns)
+    for r in rows:
+        matn_norm = r.get("matn_norm") or ""
+        batch.hadith_number_raw.append(r.get("hadith_number_raw"))
+        batch.hadith_number.append(r.get("hadith_number"))
+        batch.arabic_matn.append(r.get("arabic_matn"))
+        batch.matn_norm.append(matn_norm)
+        batch.order_ok.append(order_precheck(matn_norm, strong_norm))
+        batch.phase.append("or")
+        for n in needed_ns:
+            batch.ngrams_by_n[n].append(r.get(_ngram_col(n)) or [])
+
+    counts = {
+        "bm25": len(batch),
+        "bm25_raw": len(bm25_indices),
+        "dedup": len(batch),
     }
     return batch, counts
 
@@ -1122,6 +1246,7 @@ def fetch_candidates_parquet_legacy(
     strong_anchors: List[str],
     top_anchors: List[str],
     limit: int,
+    min_n_filter: Optional[int] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     if _WORKER_CACHE is None:
         return [], {
@@ -1179,8 +1304,22 @@ def fetch_candidates_parquet_legacy(
 
     fallback_rows = []
     if len(merged) < MIN_CANDS:
-        table = _WORKER_CACHE.fetch(db_path, [], require_all=False, limit=limit)
+        fallback_limit = limit
+        if MAX_FALLBACK_CANDS > 0:
+            fallback_limit = min(limit, MAX_FALLBACK_CANDS)
+        table = _WORKER_CACHE.fetch(db_path, [], require_all=False, limit=fallback_limit)
         fallback_rows = table.to_pylist()
+        if (
+            FALLBACK_SAFE_TOKEN_FILTER
+            and FALLBACK_SAFE_FILTER_AT > 0
+            and len(fallback_rows) > FALLBACK_SAFE_FILTER_AT
+            and min_n_filter is not None
+        ):
+            filtered = []
+            for r in fallback_rows:
+                if int(r.get("token_count") or 0) >= int(min_n_filter):
+                    filtered.append(r)
+            fallback_rows = filtered
         for r in fallback_rows:
             r["phase"] = "fallback"
             r["order_ok"] = True
@@ -1252,6 +1391,8 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
 
     db_paths = filter_db_paths_for_kutub(_WORKER_DB_PATHS, kutub_list)
     perf_counts = {
+        "cand_bm25": 0,
+        "cand_bm25_raw": 0,
         "cand_and": 0,
         "cand_or": 0,
         "cand_fallback": 0,
@@ -1263,39 +1404,56 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
     for dbp in db_paths:
         if not _db_is_compatible(dbp):  # erwartet: nur inkompatible DBs werden hier rausgefiltert
             continue
-        candidates, cand_counts = fetch_candidates_parquet(
-            dbp,
-            strong_anchors=strong_anchors,
-            top_anchors=top_anchors,
-            limit=SQL_CANDIDATE_LIMIT,
-            needed_ns=n_values,
-        )
-
-        if DEBUG:
-            match_logging.log_candidate_flow(
-                hadith_id=hadith_id,
-                and_count=cand_counts.get("and", 0),
-                or_count=cand_counts.get("or", 0),
-                fallback_count=cand_counts.get("fallback", 0),
-                final_count=cand_counts.get("dedup", 0),
+        if USE_IR_CANDIDATES:
+            candidates, cand_counts = fetch_candidates_bm25(
+                dbp,
+                query_tokens=h_words,
+                strong_anchors=strong_anchors,
+                topk=CANDIDATE_TOPK,
+                needed_ns=n_values,
+            )
+            if DEBUG:
+                match_logging.log_candidate_flow_ir(
+                    hadith_id=hadith_id,
+                    bm25_count=cand_counts.get("bm25", 0),
+                    final_count=cand_counts.get("dedup", 0),
+                )
+            perf_counts["cand_bm25"] += cand_counts.get("bm25", 0)
+            perf_counts["cand_bm25_raw"] += cand_counts.get("bm25_raw", 0)
+        else:
+            candidates, cand_counts = fetch_candidates_parquet(
+                dbp,
+                strong_anchors=strong_anchors,
+                top_anchors=top_anchors,
+                limit=SQL_CANDIDATE_LIMIT,
+                needed_ns=n_values,
             )
 
-        perf_counts["cand_and"] += cand_counts.get("and", 0)
-        perf_counts["cand_or"] += cand_counts.get("or", 0)
-        perf_counts["cand_fallback"] += cand_counts.get("fallback", 0)
-        perf_counts["cand_dedup"] += cand_counts.get("dedup", 0)
-        perf_counts["cand_and_raw"] += cand_counts.get("and_raw", 0)
-        perf_counts["cand_or_raw"] += cand_counts.get("or_raw", 0)
-        perf_counts["cand_fallback_raw"] += cand_counts.get("fallback_raw", 0)
+            if DEBUG:
+                match_logging.log_candidate_flow(
+                    hadith_id=hadith_id,
+                    and_count=cand_counts.get("and", 0),
+                    or_count=cand_counts.get("or", 0),
+                    fallback_count=cand_counts.get("fallback", 0),
+                    final_count=cand_counts.get("dedup", 0),
+                )
+
+            perf_counts["cand_and"] += cand_counts.get("and", 0)
+            perf_counts["cand_or"] += cand_counts.get("or", 0)
+            perf_counts["cand_fallback"] += cand_counts.get("fallback", 0)
+            perf_counts["cand_dedup"] += cand_counts.get("dedup", 0)
+            perf_counts["cand_and_raw"] += cand_counts.get("and_raw", 0)
+            perf_counts["cand_or_raw"] += cand_counts.get("or_raw", 0)
+            perf_counts["cand_fallback_raw"] += cand_counts.get("fallback_raw", 0)
 
         for idx in range(len(candidates)):
             t = candidates.arabic_matn[idx]
             if t is None:
                 continue
-            t_ngrams_by_n = {
-                n_val: candidates.ngrams_by_n.get(n_val, [])[idx] or []
-                for n_val in n_values
-            }
+            t_ngrams_by_n = {}
+            for n_val in n_values:
+                arr = candidates.ngrams_by_n.get(n_val) or []
+                t_ngrams_by_n[n_val] = arr[idx] if idx < len(arr) else []
             final, hit_rate, order_ratio, best_n = score_candidate_multi_n_from_precomputed(
                 h_words, h_ngrams_by_n, t_ngrams_by_n, n, cp
             )  # erwartet: bei echten Matches Werte nahe 1.0
@@ -1387,6 +1545,7 @@ def match_one_hadith_all_legacy(raw_line: str, params_dict: dict) -> Dict[str, A
     cat = get_text_category(len(h_words))
     cp = get_cat_params(p, cat)
     n = calculate_n_value(len(h_words), cp)
+    min_n = min(_candidate_n_values(h_words, n))
 
     pos_map: Optional[Dict[str, str]] = None
     if ENABLE_STANZA and _WORKER_STANZA is not None:
@@ -1404,16 +1563,30 @@ def match_one_hadith_all_legacy(raw_line: str, params_dict: dict) -> Dict[str, A
         )
 
     all_matches: List[Dict[str, Any]] = []
+    perf_counts = {
+        "cand_and": 0,
+        "cand_or": 0,
+        "cand_fallback": 0,
+        "cand_dedup": 0,
+        "cand_and_raw": 0,
+        "cand_or_raw": 0,
+        "cand_fallback_raw": 0,
+    }
     db_paths = filter_db_paths_for_kutub(_WORKER_DB_PATHS, kutub_list)
     for dbp in db_paths:
         if not _db_is_compatible(dbp):
             continue
-        candidates, _ = fetch_candidates_parquet_legacy(
+        candidates, cand_counts = fetch_candidates_parquet_legacy(
             dbp,
             strong_anchors=strong_anchors,
             top_anchors=top_anchors,
             limit=SQL_CANDIDATE_LIMIT,
+            min_n_filter=min_n,
         )
+        perf_counts["cand_and"] += cand_counts.get("and", 0)
+        perf_counts["cand_or"] += cand_counts.get("or", 0)
+        perf_counts["cand_fallback"] += cand_counts.get("fallback", 0)
+        perf_counts["cand_dedup"] += cand_counts.get("dedup", 0)
 
         for cand in candidates:
             t = cand.get("arabic_matn")
@@ -1478,6 +1651,10 @@ def match_one_hadith_all_legacy(raw_line: str, params_dict: dict) -> Dict[str, A
         "raw_line": raw_line,
         "best_score": float(best_score),
         "matches": all_matches,
+        "_perf": {
+            **perf_counts,
+            "matches_kept": len(all_matches),
+        },
     }
 
 
@@ -1854,6 +2031,10 @@ def main():
         match_logging.log_cache_stats(
             hit=cache_stats.hit, built=cache_stats.built, total=cache_stats.total
         )
+    if USE_IR_CANDIDATES and BM25_PREBUILD:
+        start_method = mp.get_start_method(allow_none=True)
+        if start_method == "fork":
+            _init_bm25_indexes(db_paths, _PARQUET_MAP)
 
     with tracker.phase("read_hadith_lines"):
         with HADITH_LINES_PATH.open("r", encoding="utf-8", errors="replace") as f:
@@ -1877,6 +2058,21 @@ def main():
             fast = match_one_hadith_all(line, pd)
             legacy = match_one_hadith_all_legacy(line, pd)
             _verify_results_equivalent(fast, legacy, PERF_VERIFY_TOL)
+            if DEBUG:
+                fast_perf = fast.get("_perf") or {}
+                legacy_perf = legacy.get("_perf") or {}
+                fast_cands = int(
+                    fast_perf.get("cand_bm25")
+                    or fast_perf.get("cand_dedup")
+                    or 0
+                )
+                legacy_cands = int(legacy_perf.get("cand_dedup") or 0)
+                if fast_cands or legacy_cands:
+                    match_logging.log_candidate_compare(
+                        hadith_id=fast.get("hadith_id"),
+                        ir_count=fast_cands,
+                        legacy_count=legacy_cands,
+                    )
 
     with tracker.phase("param_search"):
         best_p, best_objective, best_coverage, best_avg_hit = recursive_search(
@@ -1922,6 +2118,8 @@ def main():
     tracker.count("results", len(all_results))
     tracker.count("total_matches", sum(len(r.get("matches", [])) for r in all_results))
     perf_totals = {
+        "cand_bm25": 0,
+        "cand_bm25_raw": 0,
         "cand_and": 0,
         "cand_or": 0,
         "cand_fallback": 0,
@@ -1939,11 +2137,15 @@ def main():
         tracker.count(k, v)
     tracker.count(
         "cand_total_raw",
-        perf_totals["cand_and_raw"]
+        perf_totals["cand_bm25_raw"]
+        + perf_totals["cand_and_raw"]
         + perf_totals["cand_or_raw"]
         + perf_totals["cand_fallback_raw"],
     )
-    tracker.count("cand_total_dedup", perf_totals["cand_dedup"])
+    tracker.count(
+        "cand_total_dedup",
+        perf_totals["cand_bm25"] + perf_totals["cand_dedup"],
+    )
 
     with tracker.phase("write_results"):
         write_results_to_db(
