@@ -31,8 +31,9 @@ HADITH_LINES_PATH = Path(
     "/app/Tafsir/pipeline/analysis/sahihah/sahihah_hadith_extracted_in_sittah.txt"
 )
 
-DB_GLOB = (
-    "/app/tools/ML/Data/normalized_hadith/*.db"
+DB_GLOB = os.environ.get(
+    "DB_GLOB",
+    "/app/tools/ML/Data/normalized_hadith/*.db",
 )
 
 DB_TABLE = "hadiths"
@@ -62,13 +63,13 @@ DEBUG = os.environ.get("DEBUG", "1") == "1"
 PLOT_COVERAGE = os.environ.get("PLOT_COVERAGE", "1") == "1"
 
 MIN_CANDS = int(os.environ.get("MIN_CANDS", "25"))
-MIN_ACCEPT_SCORE = float(os.environ.get("MIN_ACCEPT_SCORE", "0.75"))
+MIN_ACCEPT_SCORE = float(os.environ.get("MIN_ACCEPT_SCORE", "0.9"))
 META_STRENGTH = float(os.environ.get("META_STRENGTH", "1.0"))
 TOPK_RERANK = int(os.environ.get("TOPK_RERANK", "20"))
 ANCHOR_STRONG_K = int(os.environ.get("ANCHOR_STRONG_K", "3"))
 ANCHOR_TOP_M = int(os.environ.get("ANCHOR_TOP_M", "10"))
 ANCHOR_STRIDE = int(os.environ.get("ANCHOR_STRIDE", "25"))
-ORDER_PRECHECK_PENALTY = float(os.environ.get("ORDER_PRECHECK_PENALTY", "0.9"))
+ORDER_PRECHECK_PENALTY = float(os.environ.get("ORDER_PRECHECK_PENALTY", "1.5"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "100"))
 MAX_FALLBACK_CANDS = int(os.environ.get("MAX_FALLBACK_CANDS", "800"))
 FALLBACK_SAFE_FILTER_AT = int(
@@ -80,7 +81,7 @@ FALLBACK_SAFE_TOKEN_FILTER = os.environ.get("FALLBACK_SAFE_TOKEN_FILTER", "1") =
 # CANDIDATE GENERATION (IR)
 # =========================
 
-CANDIDATE_PIPELINE = os.environ.get("CANDIDATE_PIPELINE", "ir").strip().lower()
+CANDIDATE_PIPELINE = os.environ.get("CANDIDATE_PIPELINE", "bm25").strip().lower()
 USE_IR_CANDIDATES = CANDIDATE_PIPELINE in {"ir", "bm25"}
 CANDIDATE_TOPK = int(os.environ.get("CANDIDATE_TOPK", "200"))
 CANDIDATE_MIN_TOPK = int(os.environ.get("CANDIDATE_MIN_TOPK", str(MIN_CANDS)))
@@ -97,7 +98,7 @@ PERF_CPROFILE = os.environ.get("PERF_CPROFILE", "1") == "1"
 PERF_TRACEMALLOC = os.environ.get("PERF_TRACEMALLOC", "1") == "1"
 PERF_TRACEMALLOC_TOP = int(os.environ.get("PERF_TRACEMALLOC_TOP", "1"))
 PERF_REPORT_PATH = os.environ.get("PERF_REPORT_PATH", "").strip()
-PERF_VERIFY = os.environ.get("PERF_VERIFY", "0") == "1"
+PERF_VERIFY = os.environ.get("PERF_VERIFY", "1") == "1"
 PERF_VERIFY_LINES = int(os.environ.get("PERF_VERIFY_LINES", "50"))
 PERF_VERIFY_DBS = int(os.environ.get("PERF_VERIFY_DBS", "0"))
 PERF_VERIFY_TOL = float(os.environ.get("PERF_VERIFY_TOL", "1e-12"))
@@ -1002,6 +1003,78 @@ def _init_candidate_batch(needed_ns: List[int]) -> CandidateBatch:
     )
 
 
+def _slice_candidate_batch(
+    batch: CandidateBatch, limit: int, needed_ns: List[int]
+) -> CandidateBatch:
+    limit = max(0, int(limit))
+    if limit <= 0 or len(batch) <= limit:
+        return batch
+    sliced = CandidateBatch(
+        hadith_number_raw=batch.hadith_number_raw[:limit],
+        hadith_number=batch.hadith_number[:limit],
+        arabic_matn=batch.arabic_matn[:limit],
+        matn_norm=batch.matn_norm[:limit],
+        order_ok=batch.order_ok[:limit],
+        phase=batch.phase[:limit],
+        ngrams_by_n={},
+    )
+    for n in needed_ns:
+        vals = batch.ngrams_by_n.get(n) or []
+        sliced.ngrams_by_n[n] = vals[:limit]
+    return sliced
+
+
+def _merge_candidate_batches(
+    dest: CandidateBatch,
+    src: CandidateBatch,
+    needed_ns: List[int],
+    *,
+    phase_override: Optional[str] = None,
+) -> None:
+    seen = set()
+    for idx in range(len(dest)):
+        key = str(
+            dest.hadith_number_raw[idx]
+            or (dest.hadith_number[idx] if idx < len(dest.hadith_number) else None)
+        )
+        seen.add(key)
+
+    for idx in range(len(src)):
+        key = str(
+            src.hadith_number_raw[idx]
+            or (src.hadith_number[idx] if idx < len(src.hadith_number) else None)
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        dest.hadith_number_raw.append(
+            src.hadith_number_raw[idx]
+            if idx < len(src.hadith_number_raw)
+            else None
+        )
+        dest.hadith_number.append(
+            src.hadith_number[idx] if idx < len(src.hadith_number) else None
+        )
+        dest.arabic_matn.append(
+            src.arabic_matn[idx] if idx < len(src.arabic_matn) else None
+        )
+        dest.matn_norm.append(
+            src.matn_norm[idx] if idx < len(src.matn_norm) else ""
+        )
+        dest.order_ok.append(
+            src.order_ok[idx] if idx < len(src.order_ok) else True
+        )
+        if phase_override is not None:
+            dest.phase.append(phase_override)
+        else:
+            dest.phase.append(
+                src.phase[idx] if idx < len(src.phase) else ""
+            )
+        for n in needed_ns:
+            vals = src.ngrams_by_n.get(n) or []
+            dest.ngrams_by_n[n].append(vals[idx] if idx < len(vals) else [])
+
+
 def _append_stage(
     batch: CandidateBatch,
     cols: Dict[str, List[Any]],
@@ -1190,6 +1263,7 @@ def fetch_candidates_bm25(
     *,
     query_tokens: List[str],
     strong_anchors: List[str],
+    top_anchors: List[str],
     topk: int,
     needed_ns: List[int],
 ) -> Tuple[CandidateBatch, Dict[str, int]]:
@@ -1197,6 +1271,7 @@ def fetch_candidates_bm25(
         return _init_candidate_batch(needed_ns), {
             "bm25": 0,
             "bm25_raw": 0,
+            "fallback": 0,
             "dedup": 0,
         }
 
@@ -1205,6 +1280,7 @@ def fetch_candidates_bm25(
         return _init_candidate_batch(needed_ns), {
             "bm25": 0,
             "bm25_raw": 0,
+            "fallback": 0,
             "dedup": 0,
         }
 
@@ -1232,9 +1308,37 @@ def fetch_candidates_bm25(
         for n in needed_ns:
             batch.ngrams_by_n[n].append(r.get(_ngram_col(n)) or [])
 
+    bm25_count = len(batch)
+    fallback_count = 0
+    if bm25_count < int(CANDIDATE_MIN_TOPK):
+        remaining = int(CANDIDATE_MIN_TOPK) - bm25_count
+        if remaining > 0:
+            fallback_limit = min(int(MAX_FALLBACK_CANDS), remaining)
+            if fallback_limit > 0:
+                fallback_batch, _ = fetch_candidates_parquet(
+                    db_path,
+                    strong_anchors=strong_anchors,
+                    top_anchors=top_anchors,
+                    limit=fallback_limit,
+                    needed_ns=needed_ns,
+                )
+                if len(fallback_batch) > fallback_limit:
+                    fallback_batch = _slice_candidate_batch(
+                        fallback_batch, fallback_limit, needed_ns
+                    )
+                fallback_count = len(fallback_batch)
+                if fallback_count:
+                    _merge_candidate_batches(
+                        batch,
+                        fallback_batch,
+                        needed_ns,
+                        phase_override="fallback",
+                    )
+
     counts = {
-        "bm25": len(batch),
+        "bm25": bm25_count,
         "bm25_raw": len(bm25_indices),
+        "fallback": fallback_count,
         "dedup": len(batch),
     }
     return batch, counts
@@ -1409,6 +1513,7 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
                 dbp,
                 query_tokens=h_words,
                 strong_anchors=strong_anchors,
+                top_anchors=top_anchors,
                 topk=CANDIDATE_TOPK,
                 needed_ns=n_values,
             )
@@ -1416,10 +1521,14 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
                 match_logging.log_candidate_flow_ir(
                     hadith_id=hadith_id,
                     bm25_count=cand_counts.get("bm25", 0),
+                    fallback_count=cand_counts.get("fallback", 0),
                     final_count=cand_counts.get("dedup", 0),
                 )
             perf_counts["cand_bm25"] += cand_counts.get("bm25", 0)
             perf_counts["cand_bm25_raw"] += cand_counts.get("bm25_raw", 0)
+            perf_counts["cand_fallback"] += cand_counts.get("fallback", 0)
+            perf_counts["cand_fallback_raw"] += cand_counts.get("fallback", 0)
+            perf_counts["cand_dedup"] += cand_counts.get("dedup", 0)
         else:
             candidates, cand_counts = fetch_candidates_parquet(
                 dbp,
@@ -2061,11 +2170,7 @@ def main():
             if DEBUG:
                 fast_perf = fast.get("_perf") or {}
                 legacy_perf = legacy.get("_perf") or {}
-                fast_cands = int(
-                    fast_perf.get("cand_bm25")
-                    or fast_perf.get("cand_dedup")
-                    or 0
-                )
+                fast_cands = int(fast_perf.get("cand_dedup") or 0)
                 legacy_cands = int(legacy_perf.get("cand_dedup") or 0)
                 if fast_cands or legacy_cands:
                     match_logging.log_candidate_compare(
@@ -2144,7 +2249,7 @@ def main():
     )
     tracker.count(
         "cand_total_dedup",
-        perf_totals["cand_bm25"] + perf_totals["cand_dedup"],
+        perf_totals["cand_dedup"],
     )
 
     with tracker.phase("write_results"):

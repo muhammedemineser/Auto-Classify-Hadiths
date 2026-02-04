@@ -52,12 +52,14 @@ def log_candidate_flow_ir(
     hadith_id: int,
     *,
     bm25_count: int,
+    fallback_count: int,
     final_count: int,
 ) -> None:
     if not DEBUG_ENABLED:
         return
     section(f"Candidate Flow {hadith_id}", "🔍")
     _emit(f"- BM25: {bm25_count}")
+    _emit(f"- Fallback: {fallback_count}")
     _emit(f"- Final: {final_count}")
 
 
