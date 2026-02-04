@@ -45,12 +45,21 @@ def _coerce_to_float(value: Any) -> Optional[float]:
         return None
 
 
+def _make_ngrams(tokens: List[str], n: int) -> List[str]:
+    if n <= 0 or len(tokens) < n:
+        return []
+    return [" ".join(tokens[i : i + n]) for i in range(0, len(tokens) - n + 1)]
+
+
 def _build_parquet_table(
     conn: sqlite3.Connection,
     table_name: str,
     id_col: str,
     text_col: str,
     normalize_func: Callable[[Any], str],
+    *,
+    tokenize_func: Optional[Callable[[Any], List[str]]] = None,
+    max_ngram_n: Optional[int] = None,
 ) -> pa.Table:
     cursor = conn.cursor()
     cursor.execute(
@@ -62,6 +71,12 @@ def _build_parquet_table(
     hadith_number: List[Optional[float]] = []
     matn_norm: List[str] = []
     token_count: List[int] = []
+    tokens_norm: List[List[str]] = []
+    ngram_columns: Dict[int, List[List[str]]] = {}
+    max_ngram_n = int(max_ngram_n or 0)
+    if max_ngram_n > 0:
+        for n in range(1, max_ngram_n + 1):
+            ngram_columns[n] = []
 
     for raw_id, raw_text in cursor:
         if raw_text is None:
@@ -69,32 +84,45 @@ def _build_parquet_table(
         text = str(raw_text)
         norm_value = normalize_func(text)
         norm = "" if norm_value is None else str(norm_value)
+        if tokenize_func is not None:
+            tokens = tokenize_func(text)
+        else:
+            tokens = norm.split()
         hadith_number_raw.append(str(raw_id))
         arabic_matn.append(text)
         hadith_number.append(_coerce_to_float(raw_id))
         matn_norm.append(norm)
-        token_count.append(len(norm.split()))
+        token_count.append(len(tokens))
+        tokens_norm.append(tokens)
+        if max_ngram_n > 0:
+            for n in range(1, max_ngram_n + 1):
+                ngram_columns[n].append(_make_ngrams(tokens, n))
 
-    schema = pa.schema(
-        [
-            pa.field("hadith_number_raw", pa.string()),
-            pa.field("arabic_matn", pa.string()),
-            pa.field("hadith_number", pa.float64()),
-            pa.field("matn_norm", pa.string()),
-            pa.field("token_count", pa.int32()),
-        ]
-    )
+    fields = [
+        pa.field("hadith_number_raw", pa.string()),
+        pa.field("arabic_matn", pa.string()),
+        pa.field("hadith_number", pa.float64()),
+        pa.field("matn_norm", pa.string()),
+        pa.field("token_count", pa.int32()),
+        pa.field("tokens_norm", pa.list_(pa.string())),
+    ]
+    if max_ngram_n > 0:
+        for n in range(1, max_ngram_n + 1):
+            fields.append(pa.field(f"ngrams_{n}", pa.list_(pa.string())))
+    schema = pa.schema(fields)
 
-    return pa.Table.from_arrays(
-        [
-            pa.array(hadith_number_raw, type=pa.string()),
-            pa.array(arabic_matn, type=pa.string()),
-            pa.array(hadith_number, type=pa.float64()),
-            pa.array(matn_norm, type=pa.string()),
-            pa.array(token_count, type=pa.int32()),
-        ],
-        schema=schema,
-    )
+    arrays: List[pa.Array] = [
+        pa.array(hadith_number_raw, type=pa.string()),
+        pa.array(arabic_matn, type=pa.string()),
+        pa.array(hadith_number, type=pa.float64()),
+        pa.array(matn_norm, type=pa.string()),
+        pa.array(token_count, type=pa.int32()),
+        pa.array(tokens_norm, type=pa.list_(pa.string())),
+    ]
+    if max_ngram_n > 0:
+        for n in range(1, max_ngram_n + 1):
+            arrays.append(pa.array(ngram_columns[n], type=pa.list_(pa.string())))
+    return pa.Table.from_arrays(arrays, schema=schema)
 
 
 def build_parquet_cache_if_missing(
@@ -105,6 +133,8 @@ def build_parquet_cache_if_missing(
     id_col: str,
     text_col: str,
     normalize_func: Callable[[Any], str],
+    tokenize_func: Optional[Callable[[Any], List[str]]] = None,
+    max_ngram_n: Optional[int] = None,
 ) -> Tuple[Dict[str, Path], CacheStats]:
     cache_root = cache_dir or _default_cache_dir()
     _ensure_cache_dir(cache_root)
@@ -117,17 +147,24 @@ def build_parquet_cache_if_missing(
         parquet_path = parquet_path_for_db(db_path, cache_root)
         parquet_map[db_path] = parquet_path
 
+        required_columns = [
+            "hadith_number",
+            "hadith_number_raw",
+            "arabic_matn",
+            "matn_norm",
+            "token_count",
+            "tokens_norm",
+        ]
+        max_ngram_n = int(max_ngram_n or 0)
+        if max_ngram_n > 0:
+            for n in range(1, max_ngram_n + 1):
+                required_columns.append(f"ngrams_{n}")
+
         if parquet_path.exists():
             try:
                 pq.read_table(
                     parquet_path,
-                    columns=[
-                        "hadith_number",
-                        "hadith_number_raw",
-                        "arabic_matn",
-                        "matn_norm",
-                        "token_count",
-                    ],
+                    columns=required_columns,
                 )
                 stats.hit += 1
                 continue
@@ -137,7 +174,13 @@ def build_parquet_cache_if_missing(
         conn = sqlite3.connect(db_path)
         try:
             table_data = _build_parquet_table(
-                conn, table, id_col, text_col, normalize_func
+                conn,
+                table,
+                id_col,
+                text_col,
+                normalize_func,
+                tokenize_func=tokenize_func,
+                max_ngram_n=max_ngram_n,
             )
         finally:
             conn.close()
@@ -149,7 +192,7 @@ def build_parquet_cache_if_missing(
 
 
 class ParquetReader:
-    _SCAN_COLUMNS = [
+    _BASE_COLUMNS = [
         "hadith_number",
         "hadith_number_raw",
         "arabic_matn",
@@ -157,7 +200,7 @@ class ParquetReader:
         "token_count",
     ]
 
-    _EMPTY_SCHEMA = pa.schema(
+    _BASE_SCHEMA = pa.schema(
         [
             pa.field("hadith_number", pa.float64()),
             pa.field("hadith_number_raw", pa.string()),
@@ -181,11 +224,15 @@ class ParquetReader:
         *,
         require_all: bool,
         limit: int,
+        extra_columns: Optional[List[str]] = None,
     ) -> pa.Table:
         if limit <= 0:
-            return self._empty_table()
+            return self._empty_table(extra_columns)
         dataset = self._dataset_for_db(db_path)
-        scanner = dataset.scanner(columns=self._SCAN_COLUMNS, use_threads=True)
+        columns = list(self._BASE_COLUMNS)
+        if extra_columns:
+            columns.extend([c for c in extra_columns if c not in columns])
+        scanner = dataset.scanner(columns=columns, use_threads=True)
         batches: List[pa.Table] = []
         total = 0
 
@@ -205,7 +252,7 @@ class ParquetReader:
             total += filtered.num_rows
 
         if not batches:
-            return self._empty_table()
+            return self._empty_table(extra_columns)
 
         return pa.concat_tables(batches)
 
@@ -216,17 +263,27 @@ class ParquetReader:
             self._dataset_cache[db_path] = dataset
         return dataset
 
-    def _empty_table(self) -> pa.Table:
-        return pa.Table.from_arrays(
-            [
-                pa.array([], type=pa.float64()),
-                pa.array([], type=pa.string()),
-                pa.array([], type=pa.string()),
-                pa.array([], type=pa.string()),
-                pa.array([], type=pa.int32()),
-            ],
-            schema=self._EMPTY_SCHEMA,
-        )
+    def _empty_table(self, extra_columns: Optional[List[str]] = None) -> pa.Table:
+        fields = list(self._BASE_SCHEMA)
+        arrays: List[pa.Array] = [
+            pa.array([], type=pa.float64()),
+            pa.array([], type=pa.string()),
+            pa.array([], type=pa.string()),
+            pa.array([], type=pa.string()),
+            pa.array([], type=pa.int32()),
+        ]
+        if extra_columns:
+            for col in extra_columns:
+                if col in self._BASE_COLUMNS:
+                    continue
+                if col == "tokens_norm" or col.startswith("ngrams_"):
+                    fields.append(pa.field(col, pa.list_(pa.string())))
+                    arrays.append(pa.array([], type=pa.list_(pa.string())))
+                else:
+                    fields.append(pa.field(col, pa.string()))
+                    arrays.append(pa.array([], type=pa.string()))
+        schema = pa.schema(fields)
+        return pa.Table.from_arrays(arrays, schema=schema)
 
     def _filter_table(
         self, table: pa.Table, anchors: List[str], require_all: bool

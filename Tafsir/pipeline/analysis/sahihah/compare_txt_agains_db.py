@@ -68,6 +68,7 @@ ANCHOR_STRONG_K = int(os.environ.get("ANCHOR_STRONG_K", "3"))
 ANCHOR_TOP_M = int(os.environ.get("ANCHOR_TOP_M", "10"))
 ANCHOR_STRIDE = int(os.environ.get("ANCHOR_STRIDE", "25"))
 ORDER_PRECHECK_PENALTY = float(os.environ.get("ORDER_PRECHECK_PENALTY", "0.9"))
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "100"))
 
 # =========================
 # PERFORMANCE / PROFILING
@@ -78,6 +79,10 @@ PERF_CPROFILE = os.environ.get("PERF_CPROFILE", "1") == "1"
 PERF_TRACEMALLOC = os.environ.get("PERF_TRACEMALLOC", "1") == "1"
 PERF_TRACEMALLOC_TOP = int(os.environ.get("PERF_TRACEMALLOC_TOP", "1"))
 PERF_REPORT_PATH = os.environ.get("PERF_REPORT_PATH", "").strip()
+PERF_VERIFY = os.environ.get("PERF_VERIFY", "0") == "1"
+PERF_VERIFY_LINES = int(os.environ.get("PERF_VERIFY_LINES", "50"))
+PERF_VERIFY_DBS = int(os.environ.get("PERF_VERIFY_DBS", "0"))
+PERF_VERIFY_TOL = float(os.environ.get("PERF_VERIFY_TOL", "1e-12"))
 
 
 def _read_proc_io() -> Dict[str, int]:
@@ -668,12 +673,30 @@ def ordered_run_ratio(h_ngrams: List[str], t_ngrams: List[str]) -> float:
     return best_run / float(len(h_ngrams))  # erwartet: 0.0..1.0; bei starken Treffern nahe 1.0
 
 
-def score_candidate(
-    h_words: List[str], t_words: List[str], n: int
-) -> Tuple[float, float, float]:
-    h_ngrams = make_ngrams(h_words, n)
-    t_ngrams = make_ngrams(t_words, n)
+def _candidate_n_values(h_words: List[str], n0: int) -> List[int]:
+    n_set = {n0}
+    if len(h_words) <= 20:
+        n_set.add(n0 - 1)
+    else:
+        n_set.update({n0 - 1, n0 + 1})
 
+    values: List[int] = []
+    for n in sorted(n_set):
+        if n <= 0:
+            continue
+        n = clamp_int(n, 1, max(len(h_words), 1))
+        values.append(n)
+    return values
+
+
+def _build_h_ngrams_by_n(h_words: List[str], n_values: List[int]) -> Dict[int, List[str]]:
+    uniq = set(n_values)
+    return {n: make_ngrams(h_words, n) for n in uniq}
+
+
+def score_candidate_from_ngrams(
+    h_ngrams: List[str], t_ngrams: List[str]
+) -> Tuple[float, float, float]:
     if not h_ngrams or not t_ngrams:
         return (0.0, 0.0, 0.0)
 
@@ -681,12 +704,38 @@ def score_candidate(
     hit = 0
     for g in h_ngrams:
         if g in t_set:
-            hit += 1  # erwartet: hit steigt deutlich bei echten Matches
+            hit += 1
 
-    hit_rate = hit / float(len(h_ngrams))  # erwartet: bei starken Matches >= threshold
-    order_ratio = ordered_run_ratio(h_ngrams, t_ngrams)  # erwartet: bei starken Matches >= order_threshold
-    final = (0.7 * hit_rate) + (0.3 * order_ratio)  # erwartet: final hoch bei starken Matches
+    hit_rate = hit / float(len(h_ngrams))
+    order_ratio = ordered_run_ratio(h_ngrams, t_ngrams)
+    final = (0.7 * hit_rate) + (0.3 * order_ratio)
     return (final, hit_rate, order_ratio)
+
+
+def score_candidate_multi_n_from_precomputed(
+    h_words: List[str],
+    h_ngrams_by_n: Dict[int, List[str]],
+    t_ngrams_by_n: Dict[int, List[str]],
+    n0: int,
+    cp: NgramCategoryParams,
+) -> Tuple[float, float, float, int]:
+    n_values = _candidate_n_values(h_words, n0)
+    best = (0.0, 0.0, 0.0, n0)
+    for n in n_values:
+        h_ngrams = h_ngrams_by_n.get(n) or make_ngrams(h_words, n)
+        t_ngrams = t_ngrams_by_n.get(n) or []
+        final, hit_rate, order_ratio = score_candidate_from_ngrams(h_ngrams, t_ngrams)
+        if final > best[0]:
+            best = (final, hit_rate, order_ratio, n)
+    return best
+
+
+def score_candidate(
+    h_words: List[str], t_words: List[str], n: int
+) -> Tuple[float, float, float]:
+    h_ngrams = make_ngrams(h_words, n)
+    t_ngrams = make_ngrams(t_words, n)
+    return score_candidate_from_ngrams(h_ngrams, t_ngrams)
 
 
 def score_candidate_multi_n(
@@ -695,21 +744,11 @@ def score_candidate_multi_n(
     n0: int,
     cp: NgramCategoryParams,
 ) -> Tuple[float, float, float, int]:
-    n_set = {n0}
-    if len(h_words) <= 20:
-        n_set.add(n0 - 1)
-    else:
-        n_set.update({n0 - 1, n0 + 1})
-
-    best = (0.0, 0.0, 0.0, n0)
-    for n in sorted(n_set):
-        if n <= 0:
-            continue
-        n = clamp_int(n, 1, max(len(h_words), 1))
-        final, hit_rate, order_ratio = score_candidate(h_words, t_words, n)
-        if final > best[0]:
-            best = (final, hit_rate, order_ratio, n)
-    return best
+    h_ngrams_by_n = _build_h_ngrams_by_n(h_words, _candidate_n_values(h_words, n0))
+    t_ngrams_by_n = _build_h_ngrams_by_n(t_words, _candidate_n_values(h_words, n0))
+    return score_candidate_multi_n_from_precomputed(
+        h_words, h_ngrams_by_n, t_ngrams_by_n, n0, cp
+    )
 
 
 # =========================
@@ -881,38 +920,228 @@ def _db_is_compatible(db_path: str) -> bool:
     return ok
 
 
+def _ngram_col(n: int) -> str:
+    return f"ngrams_{n}"
+
+
+def _table_to_columns(
+    table: "pa.Table", columns: List[str]
+) -> Dict[str, List[Any]]:
+    cols: Dict[str, List[Any]] = {}
+    for name in columns:
+        if name in table.column_names:
+            cols[name] = table[name].to_pylist()
+        else:
+            cols[name] = []
+    return cols
+
+
+@dataclass
+class CandidateBatch:
+    hadith_number_raw: List[Any]
+    hadith_number: List[Any]
+    arabic_matn: List[Any]
+    matn_norm: List[str]
+    order_ok: List[bool]
+    phase: List[str]
+    ngrams_by_n: Dict[int, List[List[str]]]
+
+    def __len__(self) -> int:
+        return len(self.hadith_number_raw)
+
+
+def _init_candidate_batch(needed_ns: List[int]) -> CandidateBatch:
+    return CandidateBatch(
+        hadith_number_raw=[],
+        hadith_number=[],
+        arabic_matn=[],
+        matn_norm=[],
+        order_ok=[],
+        phase=[],
+        ngrams_by_n={n: [] for n in needed_ns},
+    )
+
+
+def _append_stage(
+    batch: CandidateBatch,
+    cols: Dict[str, List[Any]],
+    order_ok: List[bool],
+    phase_label: str,
+    needed_ns: List[int],
+    seen: set,
+    *,
+    filter_order_ok: bool,
+) -> int:
+    count = 0
+    hn_raw = cols.get("hadith_number_raw", [])
+    hn = cols.get("hadith_number", [])
+    matn_norm = cols.get("matn_norm", [])
+    arabic_matn = cols.get("arabic_matn", [])
+    ngram_cols = {n: cols.get(_ngram_col(n), []) for n in needed_ns}
+
+    for i in range(len(hn_raw)):
+        ok = order_ok[i] if i < len(order_ok) else True
+        if filter_order_ok and not ok:
+            continue
+        key = str(hn_raw[i] or (hn[i] if i < len(hn) else None))
+        if key in seen:
+            continue
+        seen.add(key)
+        batch.hadith_number_raw.append(hn_raw[i])
+        batch.hadith_number.append(hn[i] if i < len(hn) else None)
+        batch.arabic_matn.append(arabic_matn[i] if i < len(arabic_matn) else None)
+        batch.matn_norm.append(matn_norm[i] if i < len(matn_norm) else "")
+        batch.order_ok.append(True if filter_order_ok else ok)
+        batch.phase.append(phase_label)
+        for n in needed_ns:
+            vals = ngram_cols[n]
+            v = vals[i] if i < len(vals) else []
+            batch.ngrams_by_n[n].append(v or [])
+        count += 1
+    return count
+
+
 def fetch_candidates_parquet(
     db_path: str,
     *,
     strong_anchors: List[str],
     top_anchors: List[str],
     limit: int,
-) -> List[Dict[str, Any]]:
+    needed_ns: List[int],
+) -> Tuple[CandidateBatch, Dict[str, int]]:
     if _WORKER_CACHE is None:
-        return []
+        return _init_candidate_batch(needed_ns), {
+            "and": 0,
+            "or": 0,
+            "fallback": 0,
+            "dedup": 0,
+            "and_raw": 0,
+            "or_raw": 0,
+            "fallback_raw": 0,
+        }
 
-    def _dedupe(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seen = set()
-        out = []
-        for r in rows:
-            key = str(r.get("hadith_number_raw") or r.get("hadith_number"))
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(r)
-        return out
+    needed_ns = sorted({n for n in needed_ns if n > 0})
+    extra_cols = [_ngram_col(n) for n in needed_ns]
+    base_cols = ["hadith_number_raw", "hadith_number", "arabic_matn", "matn_norm"]
+    all_cols = base_cols + extra_cols
 
     strong_norm = [prep_anchor_for_search(a) for a in strong_anchors if a]
     top_norm = [prep_anchor_for_search(a) for a in top_anchors if a]
 
-    and_rows = []
+    batch = _init_candidate_batch(needed_ns)
+    seen: set = set()
+
+    and_raw = 0
+    and_kept = 0
+    if strong_norm:
+        table = _WORKER_CACHE.fetch(
+            db_path,
+            strong_norm,
+            require_all=True,
+            limit=limit,
+            extra_columns=extra_cols,
+        )
+        cols = _table_to_columns(table, all_cols)
+        and_raw = len(cols.get("hadith_number_raw", []))
+        order_ok = [
+            order_precheck(m or "", strong_norm) for m in cols.get("matn_norm", [])
+        ]
+        and_kept = _append_stage(
+            batch,
+            cols,
+            order_ok,
+            "and",
+            needed_ns,
+            seen,
+            filter_order_ok=True,
+        )
+
+    or_raw = 0
+    or_kept = 0
+    if and_kept < MIN_CANDS:
+        table = _WORKER_CACHE.fetch(
+            db_path,
+            top_norm,
+            require_all=False,
+            limit=limit,
+            extra_columns=extra_cols,
+        )
+        cols = _table_to_columns(table, all_cols)
+        or_raw = len(cols.get("hadith_number_raw", []))
+        order_ok = [
+            order_precheck(m or "", strong_norm) for m in cols.get("matn_norm", [])
+        ]
+        or_kept = _append_stage(
+            batch,
+            cols,
+            order_ok,
+            "or",
+            needed_ns,
+            seen,
+            filter_order_ok=False,
+        )
+
+    fallback_raw = 0
+    fallback_kept = 0
+    if len(batch) < MIN_CANDS:
+        table = _WORKER_CACHE.fetch(
+            db_path,
+            [],
+            require_all=False,
+            limit=limit,
+            extra_columns=extra_cols,
+        )
+        cols = _table_to_columns(table, all_cols)
+        fallback_raw = len(cols.get("hadith_number_raw", []))
+        order_ok = [True] * fallback_raw
+        fallback_kept = _append_stage(
+            batch,
+            cols,
+            order_ok,
+            "fallback",
+            needed_ns,
+            seen,
+            filter_order_ok=False,
+        )
+
+    counts = {
+        "and": and_kept,
+        "or": or_kept,
+        "fallback": fallback_kept,
+        "dedup": len(batch),
+        "and_raw": and_raw,
+        "or_raw": or_raw,
+        "fallback_raw": fallback_raw,
+    }
+    return batch, counts
+
+
+def fetch_candidates_parquet_legacy(
+    db_path: str,
+    *,
+    strong_anchors: List[str],
+    top_anchors: List[str],
+    limit: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    if _WORKER_CACHE is None:
+        return [], {
+            "and": 0,
+            "or": 0,
+            "fallback": 0,
+            "dedup": 0,
+        }
+
+    strong_norm = [prep_anchor_for_search(a) for a in strong_anchors if a]
+    top_norm = [prep_anchor_for_search(a) for a in top_anchors if a]
+
+    and_rows: List[Dict[str, Any]] = []
     if strong_norm:
         table = _WORKER_CACHE.fetch(
             db_path, strong_norm, require_all=True, limit=limit
         )
         and_rows = table.to_pylist()
 
-    filtered_and = []
+    filtered_and: List[Dict[str, Any]] = []
     for r in and_rows:
         matn_norm = r.get("matn_norm") or ""
         if order_precheck(matn_norm, strong_norm):
@@ -920,7 +1149,7 @@ def fetch_candidates_parquet(
             r["order_ok"] = True
             filtered_and.append(r)
 
-    or_rows = []
+    or_rows: List[Dict[str, Any]] = []
     if len(filtered_and) < MIN_CANDS:
         table = _WORKER_CACHE.fetch(
             db_path, top_norm, require_all=False, limit=limit
@@ -935,6 +1164,17 @@ def fetch_candidates_parquet(
         r["order_ok"] = order_ok
         filtered_or.append(r)
 
+    def _dedupe(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen = set()
+        out = []
+        for r in rows:
+            key = str(r.get("hadith_number_raw") or r.get("hadith_number"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+        return out
+
     merged = _dedupe(filtered_and + filtered_or)
 
     fallback_rows = []
@@ -946,7 +1186,13 @@ def fetch_candidates_parquet(
             r["order_ok"] = True
         merged = _dedupe(merged + fallback_rows)
 
-    return merged
+    counts = {
+        "and": len(filtered_and),
+        "or": len(filtered_or),
+        "fallback": len(fallback_rows),
+        "dedup": len(merged),
+    }
+    return merged, counts
 
 
 # =========================
@@ -1001,37 +1247,57 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
         match_logging.log_anchors(hadith_id, anchor_infos[: max(ANCHOR_TOP_M, ANCHOR_STRONG_K)])
 
     all_matches: List[Dict[str, Any]] = []
+    n_values = _candidate_n_values(h_words, n)
+    h_ngrams_by_n = _build_h_ngrams_by_n(h_words, n_values)
 
     db_paths = filter_db_paths_for_kutub(_WORKER_DB_PATHS, kutub_list)
+    perf_counts = {
+        "cand_and": 0,
+        "cand_or": 0,
+        "cand_fallback": 0,
+        "cand_dedup": 0,
+        "cand_and_raw": 0,
+        "cand_or_raw": 0,
+        "cand_fallback_raw": 0,
+    }
     for dbp in db_paths:
         if not _db_is_compatible(dbp):  # erwartet: nur inkompatible DBs werden hier rausgefiltert
             continue
-        candidates = fetch_candidates_parquet(
+        candidates, cand_counts = fetch_candidates_parquet(
             dbp,
             strong_anchors=strong_anchors,
             top_anchors=top_anchors,
             limit=SQL_CANDIDATE_LIMIT,
+            needed_ns=n_values,
         )
 
         if DEBUG:
-            phase_counts = {"and": 0, "or": 0, "fallback": 0}
-            for c in candidates:
-                phase_counts[c.get("phase", "or")] = phase_counts.get(c.get("phase", "or"), 0) + 1
             match_logging.log_candidate_flow(
                 hadith_id=hadith_id,
-                and_count=phase_counts.get("and", 0),
-                or_count=phase_counts.get("or", 0),
-                fallback_count=phase_counts.get("fallback", 0),
-                final_count=len(candidates),
+                and_count=cand_counts.get("and", 0),
+                or_count=cand_counts.get("or", 0),
+                fallback_count=cand_counts.get("fallback", 0),
+                final_count=cand_counts.get("dedup", 0),
             )
 
-        for cand in candidates:
-            t = cand.get("arabic_matn")
+        perf_counts["cand_and"] += cand_counts.get("and", 0)
+        perf_counts["cand_or"] += cand_counts.get("or", 0)
+        perf_counts["cand_fallback"] += cand_counts.get("fallback", 0)
+        perf_counts["cand_dedup"] += cand_counts.get("dedup", 0)
+        perf_counts["cand_and_raw"] += cand_counts.get("and_raw", 0)
+        perf_counts["cand_or_raw"] += cand_counts.get("or_raw", 0)
+        perf_counts["cand_fallback_raw"] += cand_counts.get("fallback_raw", 0)
+
+        for idx in range(len(candidates)):
+            t = candidates.arabic_matn[idx]
             if t is None:
                 continue
-            t_words = tokenize_words_from_text(str(t))  # erwartet: t_words nicht leer bei DB-Text
-            final, hit_rate, order_ratio, best_n = score_candidate_multi_n(
-                h_words, t_words, n, cp
+            t_ngrams_by_n = {
+                n_val: candidates.ngrams_by_n.get(n_val, [])[idx] or []
+                for n_val in n_values
+            }
+            final, hit_rate, order_ratio, best_n = score_candidate_multi_n_from_precomputed(
+                h_words, h_ngrams_by_n, t_ngrams_by_n, n, cp
             )  # erwartet: bei echten Matches Werte nahe 1.0
 
             if hit_rate < cp.threshold:  # erwartet: bei best_avg_score==0 hier oft TRUE (zu strikt / keine echten Kandidaten)
@@ -1040,14 +1306,14 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
                 continue
 
             final_adj = final * max(0.0, 1.0 - (meta_p * META_STRENGTH))
-            if not cand.get("order_ok", True) and cand.get("phase") == "or":
+            if not candidates.order_ok[idx] and candidates.phase[idx] == "or":
                 final_adj *= ORDER_PRECHECK_PENALTY
 
             all_matches.append(
                 {
                     "db_path": dbp,
                     "hadith_number": coerce_hadith_number(
-                        cand.get("hadith_number_raw") or cand.get("hadith_number")
+                        candidates.hadith_number_raw[idx] or candidates.hadith_number[idx]
                     ),  # erwartet: hadith_number stammt aus der Quell-DB (nicht rowid)
                     "score": float(final_adj),
                     "hit_rate": float(hit_rate),
@@ -1082,6 +1348,130 @@ def match_one_hadith_all(raw_line: str, params_dict: dict) -> Dict[str, Any]:
         if "_text" in m:
             m.pop("_text", None)
     best_score = all_matches[0]["score"] if all_matches else 0.0  # erwartet: >0 nur wenn mindestens ein Match die Schwellen schafft
+
+    return {
+        "hadith_id": hadith_id,
+        "raw_line": raw_line,
+        "best_score": float(best_score),
+        "matches": all_matches,
+        "_perf": {
+            **perf_counts,
+            "matches_kept": len(all_matches),
+        },
+    }
+
+
+def match_one_hadith_all_legacy(raw_line: str, params_dict: dict) -> Dict[str, Any]:
+    hadith_id, hadith_text_raw, kutub_list = parse_hadith_line(raw_line)
+    if hadith_id is None:
+        return {"hadith_id": None, "raw_line": raw_line, "matches": []}
+
+    meta_p = meta_penalty(hadith_text_raw)
+
+    h_words = tokenize_words_from_text(hadith_text_raw)
+    if not h_words:
+        return {"hadith_id": hadith_id, "raw_line": raw_line, "matches": []}
+
+    p = Params(
+        micro=NgramCategoryParams(**params_dict["micro"]),
+        very_short=NgramCategoryParams(**params_dict["very_short"]),
+        short=NgramCategoryParams(**params_dict["short"]),
+        short_medium=NgramCategoryParams(**params_dict["short_medium"]),
+        medium=NgramCategoryParams(**params_dict["medium"]),
+        medium_long=NgramCategoryParams(**params_dict["medium_long"]),
+        long=NgramCategoryParams(**params_dict["long"]),
+        very_long=NgramCategoryParams(**params_dict["very_long"]),
+        ultra_long=NgramCategoryParams(**params_dict["ultra_long"]),
+    )
+
+    cat = get_text_category(len(h_words))
+    cp = get_cat_params(p, cat)
+    n = calculate_n_value(len(h_words), cp)
+
+    pos_map: Optional[Dict[str, str]] = None
+    if ENABLE_STANZA and _WORKER_STANZA is not None:
+        try:
+            pos_map = _WORKER_STANZA.get_pos_map(hadith_id, hadith_text_raw)
+        except Exception:
+            pos_map = None
+
+    anchor_infos, strong_anchors, top_anchors = select_anchors(
+        h_words, max(1, n), pos_map
+    )
+    if DEBUG:
+        match_logging.log_anchors(
+            hadith_id, anchor_infos[: max(ANCHOR_TOP_M, ANCHOR_STRONG_K)]
+        )
+
+    all_matches: List[Dict[str, Any]] = []
+    db_paths = filter_db_paths_for_kutub(_WORKER_DB_PATHS, kutub_list)
+    for dbp in db_paths:
+        if not _db_is_compatible(dbp):
+            continue
+        candidates, _ = fetch_candidates_parquet_legacy(
+            dbp,
+            strong_anchors=strong_anchors,
+            top_anchors=top_anchors,
+            limit=SQL_CANDIDATE_LIMIT,
+        )
+
+        for cand in candidates:
+            t = cand.get("arabic_matn")
+            if t is None:
+                continue
+            t_words = tokenize_words_from_text(str(t))
+            final, hit_rate, order_ratio, best_n = score_candidate_multi_n(
+                h_words, t_words, n, cp
+            )
+
+            if hit_rate < cp.threshold:
+                continue
+            if order_ratio < cp.order_threshold:
+                continue
+
+            final_adj = final * max(0.0, 1.0 - (meta_p * META_STRENGTH))
+            if not cand.get("order_ok", True) and cand.get("phase") == "or":
+                final_adj *= ORDER_PRECHECK_PENALTY
+
+            all_matches.append(
+                {
+                    "db_path": dbp,
+                    "hadith_number": coerce_hadith_number(
+                        cand.get("hadith_number_raw") or cand.get("hadith_number")
+                    ),
+                    "score": float(final_adj),
+                    "hit_rate": float(hit_rate),
+                    "order_ratio": float(order_ratio),
+                    "_text": str(t),
+                }
+            )
+
+    all_matches.sort(key=lambda x: x["score"], reverse=True)
+
+    if ENABLE_SEM_RERANK and _WORKER_SEM is not None and all_matches:
+        topk = all_matches[:TOPK_RERANK]
+        for m in topk:
+            score = m["score"]
+            if score < 0.60 or score >= 0.95:
+                continue
+            try:
+                sem_score = _WORKER_SEM.similarity(
+                    hadith_id=hadith_id,
+                    db_path=m["db_path"],
+                    hadith_number=str(m["hadith_number"]),
+                    text_a=hadith_text_raw,
+                    text_b=m.get("_text", ""),
+                )
+                m["score"] = float(score * (0.85 + (0.15 * sem_score)))
+            except Exception:
+                continue
+
+        all_matches.sort(key=lambda x: x["score"], reverse=True)
+
+    for m in all_matches:
+        if "_text" in m:
+            m.pop("_text", None)
+    best_score = all_matches[0]["score"] if all_matches else 0.0
 
     return {
         "hadith_id": hadith_id,
@@ -1142,6 +1532,21 @@ def params_to_dict(p: Params) -> dict:
     }
 
 
+def max_ngram_n_for_params(p: Params) -> int:
+    max_n = max(
+        p.micro.max_n,
+        p.very_short.max_n,
+        p.short.max_n,
+        p.short_medium.max_n,
+        p.medium.max_n,
+        p.medium_long.max_n,
+        p.long.max_n,
+        p.very_long.max_n,
+        p.ultra_long.max_n,
+    )
+    return max_n + 1
+
+
 def tweak_params(p: Params, dx: float, dth: float, dor: float) -> Params:
     def upd(cp: NgramCategoryParams) -> NgramCategoryParams:
         return NgramCategoryParams(
@@ -1165,6 +1570,45 @@ def tweak_params(p: Params, dx: float, dth: float, dor: float) -> Params:
     )
 
 
+def _chunk_batches(
+    lines: List[str], batch_size: int, params_dict: dict
+) -> List[Tuple[int, List[str], dict]]:
+    batch_size = max(1, int(batch_size))
+    out: List[Tuple[int, List[str], dict]] = []
+    for start in range(0, len(lines), batch_size):
+        out.append((start, lines[start : start + batch_size], params_dict))
+    return out
+
+
+def _match_batch(args: Tuple[int, List[str], dict]) -> Tuple[int, List[Dict[str, Any]]]:
+    start, lines, params_dict = args
+    results = [match_one_hadith_all(line, params_dict) for line in lines]
+    return start, results
+
+
+def _verify_results_equivalent(
+    fast: Dict[str, Any], legacy: Dict[str, Any], tol: float
+) -> None:
+    if fast.get("hadith_id") != legacy.get("hadith_id"):
+        raise AssertionError("hadith_id mismatch")
+    if abs(float(fast.get("best_score") or 0.0) - float(legacy.get("best_score") or 0.0)) > tol:
+        raise AssertionError("best_score mismatch")
+    fast_matches = fast.get("matches", [])
+    legacy_matches = legacy.get("matches", [])
+    if len(fast_matches) != len(legacy_matches):
+        raise AssertionError("matches length mismatch")
+    for idx, (a, b) in enumerate(zip(fast_matches, legacy_matches)):
+        if a.get("db_path") != b.get("db_path"):
+            raise AssertionError(f"db_path mismatch at {idx}")
+        if str(a.get("hadith_number")) != str(b.get("hadith_number")):
+            raise AssertionError(f"hadith_number mismatch at {idx}")
+        for key in ("score", "hit_rate", "order_ratio"):
+            av = float(a.get(key) or 0.0)
+            bv = float(b.get(key) or 0.0)
+            if abs(av - bv) > tol:
+                raise AssertionError(f"{key} mismatch at {idx}")
+
+
 def evaluate_params(
     hadith_lines: List[str], db_paths: List[str], p: Params
 ) -> Tuple[float, float, float]:
@@ -1177,8 +1621,10 @@ def evaluate_params(
         initializer=_worker_init,
         initargs=(db_paths, _PARQUET_MAP),
     ) as ex:
-        for res in ex.map(match_one_hadith_all, hadith_lines, [pd] * len(hadith_lines)):  # erwartet: res["best_score"] > 0 für einige Zeilen, sonst bleiben scores faktisch 0
-            scores.append(float(res.get("best_score") or 0.0))  # erwartet: bei funktionierendem Matching sind nicht alle Einträge 0.0
+        batches = _chunk_batches(hadith_lines, BATCH_SIZE, pd)
+        for _, batch_res in ex.map(_match_batch, batches):
+            for res in batch_res:
+                scores.append(float(res.get("best_score") or 0.0))  # erwartet: bei funktionierendem Matching sind nicht alle Einträge 0.0
 
     if not scores:
         return 0.0, 0.0, 0.0
@@ -1389,6 +1835,9 @@ def main():
         if not db_paths:
             raise FileNotFoundError("No compatible DBs found for expected columns")
 
+    p0 = default_params()
+    max_ngram_n = max_ngram_n_for_params(p0)
+
     global _PARQUET_MAP
     with tracker.phase("build_parquet_cache"):
         _PARQUET_MAP, cache_stats = match_cache.build_parquet_cache_if_missing(
@@ -1398,6 +1847,8 @@ def main():
             id_col=DB_ID_COL,
             text_col=DB_COL,
             normalize_func=normalize_to_str,
+            tokenize_func=tokenize_words_from_text,
+            max_ngram_n=max_ngram_n,
         )
     if DEBUG:
         match_logging.log_cache_stats(
@@ -1415,7 +1866,18 @@ def main():
         eval_lines = raw_lines
     tracker.count("eval_lines", len(eval_lines))
 
-    p0 = default_params()
+    if PERF_VERIFY:
+        verify_lines = raw_lines[: max(1, PERF_VERIFY_LINES)]
+        verify_db_paths = (
+            db_paths[:PERF_VERIFY_DBS] if PERF_VERIFY_DBS and PERF_VERIFY_DBS > 0 else db_paths
+        )
+        _worker_init(verify_db_paths, _PARQUET_MAP)
+        pd = params_to_dict(p0)
+        for line in verify_lines:
+            fast = match_one_hadith_all(line, pd)
+            legacy = match_one_hadith_all_legacy(line, pd)
+            _verify_results_equivalent(fast, legacy, PERF_VERIFY_TOL)
+
     with tracker.phase("param_search"):
         best_p, best_objective, best_coverage, best_avg_hit = recursive_search(
             hadith_lines=eval_lines,
@@ -1453,11 +1915,35 @@ def main():
             initializer=_worker_init,
             initargs=(db_paths, _PARQUET_MAP),
         ) as ex:
-            all_results = list(
-                ex.map(match_one_hadith_all, raw_lines, [best_params_dict] * len(raw_lines))
-            )  # erwartet: all_results enthält pro Zeile hadith_id und (ggf.) matches
+            batches = _chunk_batches(raw_lines, BATCH_SIZE, best_params_dict)
+            all_results = [None] * len(raw_lines)
+            for start, batch_res in ex.map(_match_batch, batches):
+                all_results[start : start + len(batch_res)] = batch_res
     tracker.count("results", len(all_results))
     tracker.count("total_matches", sum(len(r.get("matches", [])) for r in all_results))
+    perf_totals = {
+        "cand_and": 0,
+        "cand_or": 0,
+        "cand_fallback": 0,
+        "cand_dedup": 0,
+        "cand_and_raw": 0,
+        "cand_or_raw": 0,
+        "cand_fallback_raw": 0,
+        "matches_kept": 0,
+    }
+    for res in all_results:
+        perf = res.get("_perf") or {}
+        for k in perf_totals:
+            perf_totals[k] += int(perf.get(k, 0))
+    for k, v in perf_totals.items():
+        tracker.count(k, v)
+    tracker.count(
+        "cand_total_raw",
+        perf_totals["cand_and_raw"]
+        + perf_totals["cand_or_raw"]
+        + perf_totals["cand_fallback_raw"],
+    )
+    tracker.count("cand_total_dedup", perf_totals["cand_dedup"])
 
     with tracker.phase("write_results"):
         write_results_to_db(
