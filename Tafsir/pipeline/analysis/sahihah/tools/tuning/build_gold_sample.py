@@ -58,17 +58,35 @@ def _iter_db_rows(
         conn.close()
 
 
+def _parse_optional_int_env(name: str, default: Optional[int]) -> Optional[int]:
+    """
+    Parse an env var that may be an int or a sentinel for "no limit".
+
+    - unset -> `default`
+    - "", "none", "null" (case-insensitive) -> None
+    - otherwise -> int(value)
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    s = str(raw).strip()
+    if not s or s.lower() in {"none", "null"}:
+        return None
+    return int(s)
+
+
 def build_gold_sample(
     *,
     db_paths: List[str],
-    size: int,
+    size: Optional[int],
     cache_dir: Path,
     table: str,
     id_col: str,
     text_col: str,
     verify_rank1: bool = True,
 ) -> List[GoldSampleItem]:
-    size = max(1, int(size))
+    if size is not None:
+        size = max(1, int(size))
     counts: Dict[str, int] = {}
     info: Dict[str, tuple] = {}
 
@@ -103,7 +121,7 @@ def build_gold_sample(
         )
 
     candidates.sort(key=lambda x: (x.db_path, x.target_row_id, x.query_norm))
-    sample = candidates[:size]
+    sample = candidates if size is None else candidates[:size]
 
     if verify_rank1 and candidates:
         p0 = pipeline.default_params()
@@ -133,7 +151,7 @@ def build_gold_sample(
                 and str(best.get("db_path")) == str(item.db_path)
             ):
                 verified.append(item)
-            if len(verified) >= size:
+            if size is not None and len(verified) >= size:
                 break
         sample = verified
     for i, item in enumerate(sample, start=1):
@@ -156,7 +174,12 @@ def main() -> None:
     parser.add_argument("--cache-dir", type=str, default=None)
     args = parser.parse_args()
 
-    size = args.size if args.size is not None else int(os.environ.get("EVAL_SAMPLE_SIZE", "30"))
+    size = (
+        args.size
+        if args.size is not None
+        # If EVAL_SAMPLE_SIZE is set to "None" in .env, treat it as "no limit".
+        else _parse_optional_int_env("EVAL_SAMPLE_SIZE", None)
+    )
     cache_dir = Path(args.cache_dir or os.environ.get("CACHE_DIR", str(pipeline.CACHE_DIR)))
     db_glob = args.db_glob or os.environ.get("DB_GLOB", pipeline.DB_GLOB)
 

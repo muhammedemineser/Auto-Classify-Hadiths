@@ -45,9 +45,9 @@ if str(_REPO_ROOT) not in sys.path:
 def _load_env():
     """
     Lightweight .env loader so the script works even when the shell hasn't
-    exported GEMINI_* variables. Only sets keys that are currently missing.
+    exported GEMINI_* variables. Only reads from /app/.env.
     """
-    env_path = cfg.CONFIG_DIR / ".env"
+    env_path = cfg.PROJECT_ROOT.parent / ".env"
     if not env_path.exists():
         return
     for line in env_path.read_text(encoding="utf-8").splitlines():

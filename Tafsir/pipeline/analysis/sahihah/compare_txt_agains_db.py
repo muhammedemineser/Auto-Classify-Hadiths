@@ -47,7 +47,7 @@ OUT_MATCHES_DB = Path(
     "/app/tools/fetch_ketab/sahihah/in_sittah_matches.db"
 )
 
-EVAL_SAMPLE_SIZE = 30
+EVAL_SAMPLE_SIZE = None
 SQL_CANDIDATE_LIMIT = 2500
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", str(os.cpu_count() or 2)))
 
@@ -102,6 +102,57 @@ PERF_VERIFY = os.environ.get("PERF_VERIFY", "1") == "1"
 PERF_VERIFY_LINES = int(os.environ.get("PERF_VERIFY_LINES", "50"))
 PERF_VERIFY_DBS = int(os.environ.get("PERF_VERIFY_DBS", "0"))
 PERF_VERIFY_TOL = float(os.environ.get("PERF_VERIFY_TOL", "1e-12"))
+
+def _preflight_imports() -> None:
+    errors: List[Tuple[str, str, BaseException]] = []
+    if USE_IR_CANDIDATES:
+        try:
+            importlib.import_module("rank_bm25")
+        except Exception as exc:
+            errors.append(
+                (
+                    "rank_bm25",
+                    "BM25 candidate generation is enabled. Install with: pip install rank-bm25",
+                    exc,
+                )
+            )
+    if ENABLE_STANZA:
+        try:
+            importlib.import_module("stanza")
+        except Exception as exc:
+            errors.append(
+                (
+                    "stanza",
+                    "Stanza POS tagging is enabled. Install with: pip install stanza",
+                    exc,
+                )
+            )
+    if ENABLE_SEM_RERANK:
+        try:
+            importlib.import_module("sentence_transformers")
+        except Exception as exc:
+            errors.append(
+                (
+                    "sentence-transformers",
+                    "Semantic reranking is enabled. Install with: pip install sentence-transformers",
+                    exc,
+                )
+            )
+        try:
+            importlib.import_module("sklearn.metrics.pairwise")
+        except Exception as exc:
+            errors.append(
+                (
+                    "scikit-learn",
+                    "Semantic reranking is enabled. Install with: pip install scikit-learn",
+                    exc,
+                )
+            )
+    if errors:
+        lines = ["Missing/failed imports for enabled features:"]
+        for name, hint, exc in errors:
+            lines.append(f"- {name}: {hint} (reason: {exc})")
+        raise RuntimeError("\n".join(lines))
 
 
 def _read_proc_io() -> Dict[str, int]:
@@ -2109,6 +2160,9 @@ def main():
     with tracker.phase("validate_inputs"):
         if not HADITH_LINES_PATH.exists():
             raise FileNotFoundError(str(HADITH_LINES_PATH))
+
+    with tracker.phase("preflight_imports"):
+        _preflight_imports()
 
     with tracker.phase("discover_db_paths"):
         db_paths = sorted(glob.glob(DB_GLOB))  # erwartet: Liste von *.db Pfaden; leer wenn Pfad falsch oder keine .db Dateien
