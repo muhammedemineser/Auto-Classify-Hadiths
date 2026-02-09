@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
@@ -62,30 +64,142 @@ _load_env()
 REPO_ROOT = cfg.PROJECT_ROOT
 
 
-def _write_log(path, entry):
-    log_path = Path(path).expanduser()
-    if log_path.is_absolute():
-        anchor = log_path.anchor
-        if anchor:
-            log_path = log_path.relative_to(anchor)
-    target_path = REPO_ROOT / log_path
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(target_path, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+def _resolve_output_db_path(
+    db: str,
+    exact_ids=None,
+    explicit_path: str | Path | None = None,
+    model_suffix: str | None = None,
+) -> Path:
+    """
+    Pick the output SQLite path.
+
+    - default: <db>_annotated.sqlite3
+    - when exact_ids are provided: <db>_annotated_subset[_{model_suffix}].sqlite3
+    - explicit path overrides both
+    """
+
+    if explicit_path:
+        return Path(explicit_path)
+
+    suffix = f"_{model_suffix}" if model_suffix else ""
+    if exact_ids:
+        return cfg.ANNOTATED_DIR / f"{db}_annotated_subset{suffix}.sqlite3"
+    return cfg.ANNOTATED_DIR / f"{db}_annotated{suffix}.sqlite3"
+
+
+def _discover_model_configs() -> list[tuple[str, dict[str, str]]]:
+    """
+    Collect available GEMINI model configurations from the environment.
+
+    Supported patterns:
+      - default keys: GEMINI_API_KEY, GEMINI_MODEL_ID, GEMINI_CACHE_NAME
+      - numbered/suffixed keys: GEMINI_<LABEL>_API_KEY, GEMINI_<LABEL>_MODEL_ID, GEMINI_<LABEL>_CACHE_NAME
+    """
+
+    configs: list[tuple[str, dict[str, str]]] = []
+
+    base_cfg = {
+        "API_KEY": os.getenv("GEMINI_API_KEY"),
+        "MODEL_ID": os.getenv("GEMINI_MODEL_ID"),
+        "CACHE_NAME": os.getenv("GEMINI_CACHE_NAME"),
+    }
+    if base_cfg["API_KEY"] and base_cfg["MODEL_ID"]:
+        configs.append(("default", base_cfg))
+
+    grouped: dict[str, dict[str, str]] = {}
+    for key, val in os.environ.items():
+        if not key.startswith("GEMINI_"):
+            continue
+        parts = key.split("_", 2)
+        if len(parts) != 3:
+            continue
+        _, label, field = parts
+        if field not in {"API_KEY", "MODEL_ID", "CACHE_NAME"}:
+            continue
+        grouped.setdefault(label, {})[field] = val
+
+    for label, cfg_fields in grouped.items():
+        if cfg_fields.get("API_KEY") and cfg_fields.get("MODEL_ID"):
+            cfg_fields.setdefault("CACHE_NAME", os.getenv("GEMINI_CACHE_NAME") or "")
+            configs.append((label.lower(), cfg_fields))
+
+    # keep deterministic order: default first, then sorted by label
+    if configs and configs[0][0] == "default":
+        head = configs[:1]
+        tail = sorted(configs[1:], key=lambda x: x[0])
+        return head + tail
+    return sorted(configs, key=lambda x: x[0])
+
+
+def _apply_model_env(model_cfg: dict[str, str]):
+    """
+    Set environment for a specific model and reset the cached Gemini client.
+    """
+
+    for field, val in model_cfg.items():
+        os.environ[f"GEMINI_{field}"] = val
+    _reset_gemini_client()
+
+
+LOG_JSON_PATH = REPO_ROOT / "logs" / "structured_logs.json"
+_LOG_LOCK = threading.Lock()
+
+
+def _format_row_ids(row_id):
+    """Normalize a single row identifier for JSON logging."""
+
+    if row_id is None or isinstance(row_id, (list, tuple, set, dict)):
+        raise ValueError("row_id must be a single value")
+    try:
+        return str(int(row_id))
+    except (TypeError, ValueError) as exc:  # noqa: B904
+        raise ValueError("row_id must be convertible to int") from exc
+
+
+def _write_log(path, entry, *, row_id):
+    """
+    Append a log entry into the unified JSON log, grouped by row_id then log type.
+
+    JSON shape:
+    {
+      "<ROW_ID>": {
+        "<log_type>": ["entry1", "entry2", ...]
+      }
+    }
+    """
+
+    rid = _format_row_ids(row_id)
+    log_type = Path(path).stem  # e.g., responses, guard, progress, errors
+
+    LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with _LOG_LOCK:
+        try:
+            data = json.loads(LOG_JSON_PATH.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            data = {}
+        except json.JSONDecodeError:
+            data = {}
+
+        log_bucket = data.setdefault(rid, {})
+        log_bucket.setdefault(log_type, []).append(str(entry))
+
+        tmp_path = LOG_JSON_PATH.with_suffix(".tmp")
+        tmp_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        tmp_path.replace(LOG_JSON_PATH)
 
 
 _GEMINI_CLIENT = None
 _GENAI_TYPES = None
-MODEL_ID = os.getenv("GEMINI_MODEL_ID")
-GEMINI_CACHE_NAME = os.getenv("GEMINI_CACHE_NAME")
 
-# Globale Variablen initialisieren
-_GEMINI_CLIENT = None
-_GENAI_TYPES = None
 
-# Diese müssen irgendwo definiert sein (z.B. in deiner .env oder global)
-GEMINI_CACHE_NAME = os.getenv("GEMINI_CACHE_NAME")
-MODEL_ID = os.getenv("GEMINI_MODEL_ID")
+def _reset_gemini_client():
+    """Force a fresh client on next request (e.g., when switching models)."""
+    global _GEMINI_CLIENT, _GENAI_TYPES
+    _GEMINI_CLIENT = None
+    _GENAI_TYPES = None
 
 
 def _get_gemini_client():
@@ -104,18 +218,20 @@ def _get_gemini_client():
 def request_gemini_response(prompt):
     client, types = _get_gemini_client()
 
-    if not GEMINI_CACHE_NAME:
+    cache_name = os.getenv("GEMINI_CACHE_NAME")
+    model_id = os.getenv("GEMINI_MODEL_ID")
+    if not cache_name:
         raise RuntimeError("GEMINI_CACHE_NAME ist nicht gesetzt.")
-    if not MODEL_ID:
+    if not model_id:
         raise RuntimeError("MODEL_ID ist nicht gesetzt.")
 
     try:
         config = types.GenerateContentConfig(
-            cached_content=GEMINI_CACHE_NAME,
+            cached_content=cache_name,
         )
 
         response = client.models.generate_content(
-            model=MODEL_ID,
+            model=model_id,
             contents=prompt,
             config=config,
         )
@@ -527,27 +643,72 @@ def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, records)
     print(f"Erfolg: {len(rows)} Datensätze in {section_table} eingefügt.")
     print(f"Erfolg: {block_total} Blocks in {block_table} eingefügt.")
     print(f"Erfolg: {chunk_total} Chunks in {chunk_table} eingefügt.")
-    _write_log(
-        "logs/bulk_insert.log",
-        f"{section_table}: sections={len(rows)}, "
-        f"blocks={block_total}, chunks={chunk_total}",
-    )
 
 
 DBS = ["katheer", "waseet", "tabary", "sa3dy", "qortoby", "baghawy"]
 DEFAULT_START_ID = None
 
 
-def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False):
+def automate_gemini(
+    db,
+    start_id=DEFAULT_START_ID,
+    exact_ids=None,
+    repair=False,
+    output_db_path=None,
+    multiple_models: bool = False,
+):
     """
     Default: verarbeitet alle Zeilen ab ``start_id`` (inkl.) wie bisher.
     Neu: Wenn ``exact_ids`` angegeben ist, werden ausschließlich diese IDs
     (einzeln) abgearbeitet – nützlich für gezielte Nachträge / Rollbacks.
+    In diesem Modus wird automatisch eine Sidecar-DB
+    ``<db>_annotated_subset.sqlite3`` verwendet (oder der per ``output_db_path``
+    übergebene Pfad), um die Hauptdatenbank nicht zu verändern.
     """
 
+    # Multi-model fan-out (only meaningful when a finite ID list is provided)
+    if multiple_models and not exact_ids:
+        print("--multiple-models erfordert eine ID-Liste (--exact-id). Flag wird ignoriert.")
+
+    if multiple_models and exact_ids:
+        models = _discover_model_configs()
+        if not models:
+            raise RuntimeError(
+                "Keine GEMINI_* Modellkonfiguration gefunden. "
+                "Erwarte Variablen wie GEMINI_1_API_KEY, GEMINI_1_MODEL_ID, GEMINI_1_CACHE_NAME."
+            )
+        for label, cfg_fields in models:
+            print(f"\n=== Modell {label} wird verarbeitet ===")
+            _apply_model_env(cfg_fields)
+            per_model_out = _resolve_output_db_path(
+                db, exact_ids, output_db_path, model_suffix=None if label == "default" else label
+            )
+            _run_single_model(
+                db=db,
+                start_id=start_id,
+                exact_ids=exact_ids,
+                repair=repair,
+                output_db_path=per_model_out,
+                model_label=label,
+            )
+        return
+
+    _reset_gemini_client()
+
+    _run_single_model(
+        db=db,
+        start_id=start_id,
+        exact_ids=exact_ids,
+        repair=repair,
+        output_db_path=_resolve_output_db_path(db, exact_ids, output_db_path),
+        model_label="default",
+    )
+
+
+def _run_single_model(db, start_id, exact_ids, repair, output_db_path, model_label):
     i = 0
     db_path_in = cfg.BOOKS_DIR / f"{db}.sqlite3"
-    db_path_out = cfg.ANNOTATED_DIR / f"{db}_annotated.sqlite3"
+    db_path_out = Path(output_db_path)
 
     engine_in = create_engine(f"sqlite:///{db_path_in}")
     metadata_in = MetaData()
@@ -577,18 +738,18 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
             future.result()
         pending_futures.clear()
 
-    def fetch_rows(conn, offset=0):
-        return conn.execute(
-            select(tafsir_table.c.id, tafsir_table.c.text)
-            .where(text("text IS NOT NULL AND text != ''"))
-            .where(tafsir_table.c.id >= start_id)
-            .order_by(tafsir_table.c.id)
-            .offset(offset)
-        )
-
     with engine_in.connect() as connection, ThreadPoolExecutor(
         max_workers=4
     ) as executor:
+        def fetch_rows(conn, offset=0):
+            return conn.execute(
+                select(tafsir_table.c.id, tafsir_table.c.text)
+                .where(text("text IS NOT NULL AND text != ''"))
+                .where(tafsir_table.c.id >= start_id)
+                .order_by(tafsir_table.c.id)
+                .offset(offset)
+            )
+
         expected_rows = (
             connection.execute(
                 text(
@@ -614,9 +775,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                 if not original_text:
                     continue
 
-                if exact_ids is not None and row_id not in exact_ids:
-                    continue
-
                 attempts = 0
                 while attempts <= GUARD_MAX_RETRIES:
                     attempts += 1
@@ -627,7 +785,9 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
 
                     print("Warte auf Antwort von Gemini (API)...")
                     _write_log(
-                        "logs/progress.log", f"row={row_id}: waiting for response"
+                        "logs/progress.log",
+                        "waiting for response",
+                        row_id=row_id,
                     )
                     extracted_text = None
                     try:
@@ -635,7 +795,8 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                     except Exception as exc:  # noqa: BLE001
                         _write_log(
                             "logs/errors.log",
-                            f"row={row_id}: gemini request failed ({exc.__class__.__name__}: {exc})",
+                            f"gemini request failed ({exc.__class__.__name__}: {exc})",
+                            row_id=row_id,
                         )
 
                     if not extracted_text:
@@ -644,7 +805,8 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         )
                         _write_log(
                             "logs/progress.log",
-                            f"row={row_id}: empty response, attempt={attempts}",
+                            f"empty response, attempt={attempts}",
+                            row_id=row_id,
                         )
                         if attempts <= GUARD_MAX_RETRIES:
                             time.sleep(1.0)
@@ -666,13 +828,13 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         f"Guard: coverage={guard['token_coverage']:.2f}, overlap={guard['ngram_overlap']:.2f}, decision={decision}"
                     )
                     log_line = (
-                        f"row={row_id}, decision={decision}, "
+                        f"decision={decision}, "
                         f"coverage={guard['token_coverage']:.2f}, "
                         f"overlap={guard['ngram_overlap']:.2f}"
                     )
                     if decision == "retry":
                         log_line += f", attempt={attempts}"
-                    _write_log("logs/guard.log", log_line)
+                    _write_log("logs/guard.log", log_line, row_id=row_id)
 
                     if decision == "retry":
                         if attempts <= GUARD_MAX_RETRIES:
@@ -685,9 +847,10 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                         )
                         _write_log(
                             "logs/guard.log",
-                            f"row={row_id}, decision=skip, reason=guard_limit, "
+                            "decision=skip, reason=guard_limit, "
                             f"coverage={guard['token_coverage']:.2f}, "
                             f"overlap={guard['ngram_overlap']:.2f}",
+                            row_id=row_id,
                         )
                         insert_empty_section(engine_out, target_table, row_id)
                         skipped_rows += 1
@@ -734,11 +897,63 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                     print("Antwort gespeichert. Nächster Durchgang...")
                     _write_log(
                         "logs/responses.log",
-                        f"row={row_id}: response accepted, total_processed={total_processed}",
+                        f"response accepted, total_processed={total_processed}",
+                        row_id=row_id,
                     )
                     break
 
             return batch, processed
+
+        # --- Modus 1: gezielte Einzel-IDs ----------------------------------
+        if exact_ids:
+            ids = sorted({int(x) for x in exact_ids})
+            if not ids:
+                print("Keine gültigen IDs angegeben; Abbruch.")
+                return
+
+            rows_to_process = []
+            with engine_out.connect() as out_conn:
+                for target_id in ids:
+                    already = out_conn.execute(
+                        text(f"SELECT 1 FROM {target_table} WHERE id = :id"),
+                        {"id": target_id},
+                    ).fetchone()
+                    if already:
+                        print(f"Überspringe ID {target_id}: bereits vorhanden.")
+                        continue
+
+                    row = connection.execute(
+                        select(tafsir_table.c.id, tafsir_table.c.text)
+                        .where(text("text IS NOT NULL AND text != ''"))
+                        .where(tafsir_table.c.id == target_id)
+                    ).fetchone()
+
+                    if row:
+                        rows_to_process.append(row)
+                    else:
+                        print(
+                            f"Keine Quellzeile für ID {target_id} gefunden – übersprungen."
+                        )
+
+            batch, processed = process_rows(rows_to_process)
+
+            if batch:
+                pending_futures.append(
+                    executor.submit(
+                        bulk_insert_tafsir,
+                        engine_out,
+                        target_table,
+                        block_table,
+                        chunk_table,
+                        list(batch),
+                    )
+                )
+
+            wait_for_pending()
+            print(
+                f"Einzelmodus: {processed}/{len(rows_to_process)} IDs verarbeitet (db={db})."
+            )
+            return
 
         offset = 0
         while True:
@@ -762,10 +977,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
                 print(
                     "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
                 )
-                _write_log(
-                    "logs/progress.log",
-                    f"{db}: no additional records processed this run",
-                )
                 break
 
             offset += processed_this_run
@@ -776,16 +987,63 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None, repair=False)
         final_saved_rows = (
             out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar() or 0
         )
-    print(f"Abgeschlossen: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel).")
-    _write_log(
-        "logs/progress.log",
-        f"{db}: finished {final_saved_rows}/{expected_rows} entries stored",
+    print(
+        f"Abgeschlossen [{model_label}]: {db} ({final_saved_rows}/{expected_rows} Einträge im Ziel)."
     )
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Automatisierte Tafsir-Annotation via Gemini API."
+    )
+    parser.add_argument(
+        "--db",
+        dest="dbs",
+        action="append",
+        choices=DBS,
+        default=None,
+        help="Nur diese DB verarbeiten (kann mehrfach angegeben werden). "
+        "Ohne Angabe werden alle verarbeitet.",
+    )
+    parser.add_argument(
+        "--start-id",
+        type=int,
+        default=DEFAULT_START_ID,
+        help="Start-ID für den normalen Lauf (Standard: erster fehlender Eintrag).",
+    )
+    parser.add_argument(
+        "--exact-id",
+        dest="exact_ids",
+        action="append",
+        type=int,
+        help="Nur die angegebenen IDs verarbeiten (kann mehrfach angegeben werden).",
+    )
+    parser.add_argument(
+        "--out-db",
+        dest="out_db",
+        help="Optional expliziter Pfad für die Ausgabedatenbank.",
+    )
+    parser.add_argument(
+        "--multiple-models",
+        dest="multiple_models",
+        action="store_true",
+        help="Bei ID-Listen: alle in .env definierten GEMINI_* Modelle nacheinander verwenden "
+        "und pro Modell eine eigene Zieldatenbank schreiben.",
+    )
+
+    args = parser.parse_args()
+    targets = args.dbs if args.dbs else DBS
+
     try:
-        for db_name in DBS:
-            automate_gemini(db_name)
+        for db_name in targets:
+            automate_gemini(
+                db_name,
+                start_id=args.start_id,
+                exact_ids=args.exact_ids,
+                output_db_path=args.out_db,
+                multiple_models=args.multiple_models,
+            )
     except KeyboardInterrupt:
         print("\nAbgebrochen durch Benutzer.")
