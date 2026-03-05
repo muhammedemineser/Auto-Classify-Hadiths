@@ -33,3 +33,4 @@ SWITCH_MODEL.py
 __pycache__/
 *.pyc
 .env
+tools/sahihah/cache/**

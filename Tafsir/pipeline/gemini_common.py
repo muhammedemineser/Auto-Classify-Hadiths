@@ -31,7 +31,7 @@ RX_BLOCK = regex.compile(rf"(?s)<{BLOCK_TAG}>(?P<content>(?:[^<]|(?R))*)</{BLOCK
 RX_CHUNK = regex.compile(rf"(?s)<{CHUNK_TAG}>(?P<content>(?:[^<]|(?R))*)</{CHUNK_TAG}>")
 
 GUARD_NGRAM_SIZE = 3
-GUARD_MAX_RETRIES = 2
+GUARD_MAX_RETRIES = 3
 GUARD_MIN_LEN_RATIO = 0.5
 
 

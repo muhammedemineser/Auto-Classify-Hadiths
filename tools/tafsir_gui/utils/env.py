@@ -26,8 +26,18 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
 
 
 REPO_ROOT = find_repo_root()
-ENV_PATH = REPO_ROOT / ".env"
+ENV_PATH = Path("/app") / ".env"
 
+
+def ensure_env_file(path: Path = ENV_PATH) -> Path:
+    """Ensure the workspace has a .env file so GUI calls can read/write it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("", encoding="utf-8")
+    return path
+
+
+ensure_env_file()
 
 def mask_secret(value: str | None, visible: int = 4) -> str:
     """Return a masked version of a secret for safe display."""

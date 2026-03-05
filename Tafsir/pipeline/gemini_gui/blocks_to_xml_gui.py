@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -57,8 +59,26 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
 REPO_ROOT = cfg.PROJECT_ROOT
-LOG_JSON_PATH = REPO_ROOT / "logs" / "structured_logs.json"
+LOGS_DIR = REPO_ROOT / "logs"
 _LOG_LOCK = threading.Lock()
+_CURRENT_LOG_JSON_PATH = LOGS_DIR / "structured_logs_default.json"
+
+
+def _sanitize_label(label: str | None) -> str:
+    if not label:
+        return "default"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(label))
+    return safe or "default"
+
+
+def _set_log_target(model_label: str | None) -> None:
+    """
+    Select the per-model structured log file to avoid overwriting entries
+    when multiple models are run sequentially.
+    """
+    global _CURRENT_LOG_JSON_PATH
+    suffix = _sanitize_label(model_label)
+    _CURRENT_LOG_JSON_PATH = LOGS_DIR / f"structured_logs_{suffix}.json"
 
 
 def _resolve_output_db_path(
@@ -104,11 +124,11 @@ def _write_log(path, entry, *, row_id):
     rid = _format_row_ids(row_id)
     log_type = Path(path).stem  # e.g., responses, guard, progress, errors
 
-    LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CURRENT_LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with _LOG_LOCK:
         try:
-            data = json.loads(LOG_JSON_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_CURRENT_LOG_JSON_PATH.read_text(encoding="utf-8"))
         except FileNotFoundError:
             data = {}
         except json.JSONDecodeError:
@@ -117,11 +137,11 @@ def _write_log(path, entry, *, row_id):
         log_bucket = data.setdefault(rid, {})
         log_bucket.setdefault(log_type, []).append(str(entry))
 
-        tmp_path = LOG_JSON_PATH.with_suffix(".tmp")
+        tmp_path = _CURRENT_LOG_JSON_PATH.with_suffix(".tmp")
         tmp_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        tmp_path.replace(LOG_JSON_PATH)
+        tmp_path.replace(_CURRENT_LOG_JSON_PATH)
 
 
 OCR_REGION_RESPONSE = (17, 146, 712, 842)
@@ -635,6 +655,10 @@ def automate_gemini(
             "es wird das aktive Modell der Oberfläche verwendet."
         )
 
+    # Route logs to a model-specific JSON to avoid clobbering entries when
+    # different models are run in separate sessions.
+    _set_log_target(os.getenv("GEMINI_MODEL_ID") or "default")
+
     i = 0
     db_path_in = cfg.BOOKS_DIR / f"{db}.sqlite3"
     db_path_out = _resolve_output_db_path(db, exact_ids, output_db_path)
@@ -822,8 +846,25 @@ def automate_gemini(
                         break
 
                     if decision == "log":
+                        if attempts <= GUARD_MAX_RETRIES:
+                            print(
+                                f"Guard im Grenzbereich; Wiederholung (Versuch {attempts}/{GUARD_MAX_RETRIES + 1})."
+                            )
+                            _write_log(
+                                "logs/progress.log",
+                                f"guard borderline, retry attempt={attempts}",
+                                row_id=source_id,
+                            )
+                            continue
                         print(
-                            "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
+                            "Guard im Grenzbereich; maximale Versuche erreicht – Eintrag wird protokolliert, aber nicht eingefügt."
+                        )
+                        _write_log(
+                            "logs/guard.log",
+                            "decision=skip, reason=guard_limit_borderline, "
+                            f"coverage={guard['token_coverage']:.2f}, "
+                            f"overlap={guard['ngram_overlap']:.2f}",
+                            row_id=source_id,
                         )
                         insert_empty_section(engine_out, target_table, source_id)
                         skipped_rows += 1

@@ -10,7 +10,7 @@ from typing import List, Set, Tuple
 import regex
 import unicodedata
 
-RX_PREFIX_STANDALONE = regex.compile(r"(?<!\S)(و|ف|ب|ك|ل|س|لي)\s+(?=\S)", regex.UNICODE)
+RX_PREFIX_STANDALONE = regex.compile(r"(?<!\S)(و|ف|ب|ك|ل|س)\s+(?=\S)", regex.UNICODE)
 TAG_RE = re.compile(r"<[^>]+>")
 ARABIC_DIACRITICS = regex.compile(
     r"[\p{M}\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]+"

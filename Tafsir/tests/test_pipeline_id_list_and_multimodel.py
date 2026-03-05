@@ -143,7 +143,10 @@ def test_api_pipeline_structured_logs_and_multimodel(tmp_path, monkeypatch):
 
     # Redirect paths into the isolated runtime
     monkeypatch.setattr(api, "REPO_ROOT", base, raising=False)
-    monkeypatch.setattr(api, "LOG_JSON_PATH", logs / "structured_logs.json", raising=False)
+    monkeypatch.setattr(api, "LOGS_DIR", logs, raising=False)
+    monkeypatch.setattr(
+        api, "_CURRENT_LOG_JSON_PATH", logs / "structured_logs_default.json", raising=False
+    )
     monkeypatch.setattr(api.cfg, "BOOKS_DIR", books, raising=False)
     monkeypatch.setattr(api.cfg, "ANNOTATED_DIR", annotated, raising=False)
     monkeypatch.setattr(api.cfg, "CONFIG_DIR", config_dir, raising=False)
@@ -206,22 +209,32 @@ def test_api_pipeline_structured_logs_and_multimodel(tmp_path, monkeypatch):
     assert hadith_default and all("m-default" in h for h in hadith_default)
     assert hadith_two and all("m-two" in h for h in hadith_two)
 
-    log_data = _read_structured_logs(logs / "structured_logs.json")
-    _assert_log_shape(log_data, {str(i) for i in expected_ids})
+    log_data_default = _read_structured_logs(logs / "structured_logs_default.json")
+    log_data_model2 = _read_structured_logs(logs / "structured_logs_2.json")
+
+    _assert_log_shape(log_data_default, {str(i) for i in expected_ids})
+    _assert_log_shape(log_data_model2, {str(i) for i in expected_ids})
 
     # Every provided ID must have at least one log entry across any log type.
     for row_id in map(str, expected_ids):
-        total_entries = sum(len(entries) for entries in log_data[row_id].values())
-        assert total_entries > 0, f"row {row_id} missing log entries"
+        total_entries_default = sum(
+            len(entries) for entries in log_data_default[row_id].values()
+        )
+        total_entries_model2 = sum(
+            len(entries) for entries in log_data_model2[row_id].values()
+        )
+        assert total_entries_default > 0, f"default row {row_id} missing log entries"
+        assert total_entries_model2 > 0, f"model2 row {row_id} missing log entries"
 
     # Ensure guard + progress logs exist for all rows; responses only for pass row.
-    for row_id, buckets in log_data.items():
-        assert "progress" in buckets
-        assert "guard" in buckets
-        if row_id == "101":
-            assert "responses" in buckets
-        else:
-            assert "responses" not in buckets
+    for bucket_set in (log_data_default, log_data_model2):
+        for row_id, buckets in bucket_set.items():
+            assert "progress" in buckets
+            assert "guard" in buckets
+            if row_id == "101":
+                assert "responses" in buckets
+            else:
+                assert "responses" not in buckets
 
 
 def test_gui_pipeline_structured_logs_list_mode(tmp_path, monkeypatch):
@@ -280,7 +293,10 @@ def test_gui_pipeline_structured_logs_list_mode(tmp_path, monkeypatch):
 
     # Redirect paths into the isolated runtime
     monkeypatch.setattr(gui, "REPO_ROOT", base, raising=False)
-    monkeypatch.setattr(gui, "LOG_JSON_PATH", logs / "structured_logs.json", raising=False)
+    monkeypatch.setattr(gui, "LOGS_DIR", logs, raising=False)
+    monkeypatch.setattr(
+        gui, "_CURRENT_LOG_JSON_PATH", logs / "structured_logs_default.json", raising=False
+    )
     monkeypatch.setattr(gui.cfg, "BOOKS_DIR", books, raising=False)
     monkeypatch.setattr(gui.cfg, "ANNOTATED_DIR", annotated, raising=False)
     monkeypatch.setattr(gui.cfg, "CONFIG_DIR", config_dir, raising=False)
@@ -353,7 +369,7 @@ def test_gui_pipeline_structured_logs_list_mode(tmp_path, monkeypatch):
     assert len(hadith_rows) == 1
     assert "PASS_MARKER" in hadith_rows[0][0]
 
-    log_data = _read_structured_logs(logs / "structured_logs.json")
+    log_data = _read_structured_logs(logs / "structured_logs_default.json")
     _assert_log_shape(log_data, {str(i) for i in expected_ids})
 
     for row_id, buckets in log_data.items():

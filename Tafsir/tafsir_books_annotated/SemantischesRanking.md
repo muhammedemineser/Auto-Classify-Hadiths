@@ -5,7 +5,7 @@ Dieses Ranking ordnet die Wortarten nach ihrer **lexikalischen Dichte** und ihre
 Mathematische Grundlage auf der das folgende ausgeführt wird ist jeweils: $Anteil  = Anteil_Dezimalzahl(z.B. 0.4)^ (- Häufigkeit des Wortes / Alle Wörter dieser Wortart)^ (Alle Wörter dieser Wortart / Häufigkeit des Wortes)
 
 ## 1. Das Verb (al-Fiʿl / الفعل) – Der Bedeutungsträger
-**AnAnteil_Dezimalzahlteil:** ~40–50% (Sehr hoch)
+**Anteil_Dezimalzahl:** ~40–50% (Sehr hoch)
 **Begründung:**
 * **Wurzelträger:** Das Verb enthält fast immer die semantische dreikonsonantige Wurzel (J-D-R), die die Kernbedeutung definiert.
 * **Satzkern:** In verbalen Sätzen (die im Arabischen Standard sind) regiert das Verb die gesamte Struktur. Es diktiert, welche Akteure (Subjekt, Objekt) notwendig sind (Valenz).

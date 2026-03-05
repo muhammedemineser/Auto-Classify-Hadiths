@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -107,6 +108,7 @@ def _discover_model_configs() -> list[tuple[str, dict[str, str]]]:
         configs.append(("default", base_cfg))
 
     grouped: dict[str, dict[str, str]] = {}
+    label_order: list[str] = []
     for key, val in os.environ.items():
         if not key.startswith("GEMINI_"):
             continue
@@ -116,19 +118,21 @@ def _discover_model_configs() -> list[tuple[str, dict[str, str]]]:
         _, label, field = parts
         if field not in {"API_KEY", "MODEL_ID", "CACHE_NAME"}:
             continue
-        grouped.setdefault(label, {})[field] = val
+        norm_label = label.lower()
+        if norm_label not in grouped:
+            grouped[norm_label] = {"_label_raw": label}
+            label_order.append(norm_label)
+        grouped[norm_label][field] = val
 
-    for label, cfg_fields in grouped.items():
+    # Preserve .env order (first seen wins) after optional default.
+    for norm_label in label_order:
+        cfg_fields = grouped[norm_label]
         if cfg_fields.get("API_KEY") and cfg_fields.get("MODEL_ID"):
             cfg_fields.setdefault("CACHE_NAME", os.getenv("GEMINI_CACHE_NAME") or "")
-            configs.append((label.lower(), cfg_fields))
+            raw_label = cfg_fields.pop("_label_raw", norm_label)
+            configs.append((raw_label, cfg_fields))
 
-    # keep deterministic order: default first, then sorted by label
-    if configs and configs[0][0] == "default":
-        head = configs[:1]
-        tail = sorted(configs[1:], key=lambda x: x[0])
-        return head + tail
-    return sorted(configs, key=lambda x: x[0])
+    return configs
 
 
 def _apply_model_env(model_cfg: dict[str, str]):
@@ -141,8 +145,27 @@ def _apply_model_env(model_cfg: dict[str, str]):
     _reset_gemini_client()
 
 
-LOG_JSON_PATH = REPO_ROOT / "logs" / "structured_logs.json"
+LOGS_DIR = REPO_ROOT / "logs"
 _LOG_LOCK = threading.Lock()
+_CURRENT_LOG_JSON_PATH = LOGS_DIR / "structured_logs_default.json"
+
+
+def _sanitize_label(label: str | None) -> str:
+    if not label:
+        return "default"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(label))
+    return safe or "default"
+
+
+def _set_log_target(model_label: str | None) -> None:
+    """
+    Set the per-model structured log file so parallel model runs do not
+    overwrite each other. File name pattern:
+    logs/structured_logs_<model>.json
+    """
+    global _CURRENT_LOG_JSON_PATH
+    suffix = _sanitize_label(model_label)
+    _CURRENT_LOG_JSON_PATH = LOGS_DIR / f"structured_logs_{suffix}.json"
 
 
 def _format_row_ids(row_id):
@@ -171,24 +194,76 @@ def _write_log(path, entry, *, row_id):
     rid = _format_row_ids(row_id)
     log_type = Path(path).stem  # e.g., responses, guard, progress, errors
 
-    LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CURRENT_LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with _LOG_LOCK:
         try:
-            data = json.loads(LOG_JSON_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_CURRENT_LOG_JSON_PATH.read_text(encoding="utf-8"))
         except FileNotFoundError:
             data = {}
         except json.JSONDecodeError:
             data = {}
 
         log_bucket = data.setdefault(rid, {})
-        log_bucket.setdefault(log_type, []).append(str(entry))
+        log_bucket.setdefault(log_type, []).append(entry)
 
-        tmp_path = LOG_JSON_PATH.with_suffix(".tmp")
+        tmp_path = _CURRENT_LOG_JSON_PATH.with_suffix(".tmp")
         tmp_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        tmp_path.replace(LOG_JSON_PATH)
+        tmp_path.replace(_CURRENT_LOG_JSON_PATH)
+
+
+def _guard_reason(decision, guard):
+    """Describe which criteria failed (or succeeded) for this evaluation."""
+
+    falls = []
+    if guard["token_coverage"] < 0.85:
+        falls.append("coverage<0.85")
+    if guard["ngram_overlap"] < 0.6:
+        falls.append("overlap<0.6")
+    if guard["length_ratio"] < GUARD_MIN_LEN_RATIO:
+        falls.append(f"length_ratio<{GUARD_MIN_LEN_RATIO}")
+
+    if decision == "pass":
+        return "all_thresholds_met"
+    if decision == "skip":
+        return "max_retries_exceeded"
+    if falls:
+        return ",".join(falls)
+
+    if decision == "log":
+        return "guard_logged"
+    return "retry_thresholds_pending"
+
+
+def _log_guard_entry(row_id, guard, attempt, response, decision, model_label):
+    """Log detailed guard metadata plus the model response for traceability."""
+
+    entry = {
+        "decision": decision,
+        "attempt": attempt,
+        "criteria": {
+            "coverage": guard["token_coverage"],
+            "overlap": guard["ngram_overlap"],
+            "length_ratio": guard["length_ratio"],
+        },
+        "thresholds": {
+            "pass_coverage": 0.85,
+            "pass_overlap": 0.6,
+            "min_length_ratio": GUARD_MIN_LEN_RATIO,
+            "max_retries": GUARD_MAX_RETRIES,
+        },
+        "response": {
+            "status": "accepted" if decision == "pass" else "rejected",
+            "text": response,
+        },
+        "reason": _guard_reason(decision, guard),
+        "source": f"row={row_id}",
+        "model_label": model_label,
+    }
+
+    _write_log("logs/guard.log", entry, row_id=row_id)
 
 
 _GEMINI_CLIENT = None
@@ -706,6 +781,9 @@ def automate_gemini(
 
 
 def _run_single_model(db, start_id, exact_ids, repair, output_db_path, model_label):
+    # Ensure logs for this model go into a dedicated JSON file to avoid key clashes
+    _set_log_target(model_label)
+
     i = 0
     db_path_in = cfg.BOOKS_DIR / f"{db}.sqlite3"
     db_path_out = Path(output_db_path)
@@ -827,14 +905,14 @@ def _run_single_model(db, start_id, exact_ids, repair, output_db_path, model_lab
                     print(
                         f"Guard: coverage={guard['token_coverage']:.2f}, overlap={guard['ngram_overlap']:.2f}, decision={decision}"
                     )
-                    log_line = (
-                        f"decision={decision}, "
-                        f"coverage={guard['token_coverage']:.2f}, "
-                        f"overlap={guard['ngram_overlap']:.2f}"
+                    _log_guard_entry(
+                        row_id=row_id,
+                        guard=guard,
+                        attempt=attempts,
+                        response=cleaned_text,
+                        decision=decision,
+                        model_label=model_label,
                     )
-                    if decision == "retry":
-                        log_line += f", attempt={attempts}"
-                    _write_log("logs/guard.log", log_line, row_id=row_id)
 
                     if decision == "retry":
                         if attempts <= GUARD_MAX_RETRIES:
@@ -845,12 +923,13 @@ def _run_single_model(db, start_id, exact_ids, repair, output_db_path, model_lab
                         print(
                             "Maximale Guard-Versuche erreicht; Eintrag wird übersprungen."
                         )
-                        _write_log(
-                            "logs/guard.log",
-                            "decision=skip, reason=guard_limit, "
-                            f"coverage={guard['token_coverage']:.2f}, "
-                            f"overlap={guard['ngram_overlap']:.2f}",
+                        _log_guard_entry(
                             row_id=row_id,
+                            guard=guard,
+                            attempt=attempts,
+                            response=cleaned_text,
+                            decision="skip",
+                            model_label=model_label,
                         )
                         insert_empty_section(engine_out, target_table, row_id)
                         skipped_rows += 1
@@ -858,8 +937,26 @@ def _run_single_model(db, start_id, exact_ids, repair, output_db_path, model_lab
                         break
 
                     if decision == "log":
+                        if attempts <= GUARD_MAX_RETRIES:
+                            print(
+                                f"Guard im Grenzbereich; Wiederholung (Versuch {attempts}/{GUARD_MAX_RETRIES + 1})."
+                            )
+                            _write_log(
+                                "logs/progress.log",
+                                f"guard borderline, retry attempt={attempts}",
+                                row_id=row_id,
+                            )
+                            continue
                         print(
-                            "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
+                            "Guard im Grenzbereich; maximale Versuche erreicht – Eintrag wird protokolliert, aber nicht eingefügt."
+                        )
+                        _log_guard_entry(
+                            row_id=row_id,
+                            guard=guard,
+                            attempt=attempts,
+                            response=cleaned_text,
+                            decision="skip",
+                            model_label=model_label,
                         )
                         insert_empty_section(engine_out, target_table, row_id)
                         skipped_rows += 1
