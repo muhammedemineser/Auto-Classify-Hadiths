@@ -17,7 +17,11 @@ from bidi.algorithm import get_display
 from camel_tools.disambig.mle import MLEDisambiguator
 from camel_tools.tagger.default import DefaultTagger
 from sklearn.feature_extraction.text import TfidfVectorizer
-import ranking_init
+
+try:
+    from . import ranking_init
+except ImportError:
+    import ranking_init
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -286,7 +290,9 @@ def _dynamic_bleu_weights(
         )
     pos_tags = _parse_pos(reference_pos)
     if not pos_tags:
-        raise ValueError("reference_pos is empty. POS must be precomputed in initialization stage.")
+        raise ValueError(
+            "reference_pos is empty. POS must be precomputed in initialization stage."
+        )
 
     token_weights = [_pos_weight(tag) for tag in pos_tags] or [1.0]
     avg_weight = float(sum(token_weights) / len(token_weights))
@@ -341,51 +347,53 @@ class Ranking:
         self.medium: list[tuple[int, int]] = medium or []
         self.low: list[tuple[int, int]] = low or []
 
-    def match(self, db, cand_txt):
-        for cand_text, cand_ids in cand_txt.items():
+    def match(self, ref, cand):
+        for cand_text, cand_ids in cand.items():
             cand_norm = cand_meta[cand_text]["normalized"]
-            for row in db:
-                db_text, db_id, db_norm, _db_pos = row
+            for row in ref:
+                ref_text, ref_id, ref_norm, _ref_pos = row
                 for cand_id in cand_ids:
-                    if TopLevel.is_equal(db_norm, cand_norm):
-                        self.top.append((cand_id, db_id))
-                    elif TopLevel.like_equal(db_norm, cand_norm):
-                        self.top.append((cand_id, db_id))
-                    elif Medium.includes(db_norm, cand_norm):
-                        self.medium.append((cand_id, db_id))
-                    elif Medium.part_of(db_norm, cand_norm):
-                        self.medium.append((cand_id, db_id))
-                    elif Low.like(db_norm, cand_norm):
-                        self.low.append((cand_id, db_id))
+                    if TopLevel.is_equal(ref_norm, cand_norm):
+                        self.top.append((cand_id, ref_id))
+                    elif TopLevel.like_equal(ref_norm, cand_norm):
+                        self.top.append((cand_id, ref_id))
+                    elif Medium.includes(ref_norm, cand_norm):
+                        self.medium.append((cand_id, ref_id))
+                    elif Medium.part_of(ref_norm, cand_norm):
+                        self.medium.append((cand_id, ref_id))
+                    elif Low.like(ref_norm, cand_norm):
+                        self.low.append((cand_id, ref_id))
 
 
 class TopLevel(Ranking):
-    def is_equal(db, txt):
-        return db == txt
+    def is_equal(ref, cand):
+        return ref == cand
 
-    def like_equal(db, txt):
-        A = db.split()
-        B = txt.split()
-        if len(set(A) ^ set(B)) < 10:
+    def like_equal(ref, cand):
+        A = ref.split()
+        B = cand.split()
+        if len(A) != len(B):
+            return False
+        if len(set(A) ^ set(B)) <= len(A) * 0.2:
             return True
         return False
 
 
 class Medium(Ranking):
-    def includes(db, txt):
-        if txt and txt in db:
+    def includes(ref, cand):
+        if cand and cand in ref:
             return True
         return False
 
-    def part_of(db, txt):
-        if db and db in txt:
+    def part_of(ref, cand):
+        if ref and ref in cand:
             return True
         return False
 
 
 class Low(Ranking):
-    def like(db, txt):
-        return bool(set(db.split()) & set(txt.split()))
+    def like(ref, cand):
+        return bool(set(ref.split()) & set(cand.split()))
 
 
 instances = Ranking(top=[], medium=[], low=[])
