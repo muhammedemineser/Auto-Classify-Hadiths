@@ -1,2 +1,0 @@
-"""Gemini GUI tooling package."""
-

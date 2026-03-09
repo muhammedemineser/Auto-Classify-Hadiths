@@ -1,8 +1,0 @@
-nicegui>=1.4.20
-sqlalchemy>=2.0.0
-tenacity>=8.2.3
-APScheduler>=3.10.4
-loguru>=0.7.2
-python-dotenv>=1.0.1
-pypdf>=4.3.1
-google-genai>=0.1.0

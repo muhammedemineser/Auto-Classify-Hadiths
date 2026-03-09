@@ -1,7 +1,0 @@
-SELECT
-  tafsir_analysis_katheer.id AS katheer_id,
-  tafsir_analysis_katheer.extracted_text_full,
-  katheer.text
-FROM tafsir_analysis_katheer
-INNER JOIN katheer
-  ON tafsir_analysis_katheer.id = katheer.id;
