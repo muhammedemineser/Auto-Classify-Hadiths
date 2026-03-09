@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from multiprocessing import Pool
@@ -16,6 +15,7 @@ from camel_tools.tagger.default import DefaultTagger
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from Tafsir.pipeline.analysis.compare_tafsir_texts import normalize
+from Tafsir.pipeline.analysis.sahihah.tools.tuning import ranking_init
 
 @dataclass
 class Config:
@@ -64,120 +64,41 @@ class Utils:
         return get_display(arabic_reshaper.reshape(text))
 
     @classmethod
-    def _get_pos_tagger(cls) -> DefaultTagger:
-        if cls._tagger is None:
-            cls._mled = MLEDisambiguator.pretrained()
-            cls._tagger = DefaultTagger(cls._mled, "pos")
-        return cls._tagger
+    def _get_pos_tagger(utils_class) -> DefaultTagger:
+        if utils_class._tagger is None:
+            utils_class._mled = MLEDisambiguator.pretrained()
+            utils_class._tagger = DefaultTagger(utils_class._mled, "pos")
+        return utils_class._tagger
 
     @classmethod
-    def tag_pos_tokens(cls, tokens: list[str]) -> list[str]:
+    def tag_pos_tokens(utils_class, tokens: list[str]) -> list[str]:
         if not tokens:
             return []
-        tagger = cls._get_pos_tagger()
+        tagger = utils_class._get_pos_tagger()
         return list(tagger.tag(tokens))
 
     @classmethod
-    def tag_pos_text(cls, text: str) -> list[str]:
-        return cls.tag_pos_tokens(Utils.norm(text).split())
-
-    @staticmethod
-    def _ensure_cached_columns(conn: sqlite3.Connection, config=config) -> None:
-        cur = conn.cursor()
-        cols = {
-            row[1]
-            for row in cur.execute(f"PRAGMA table_info({config.table})").fetchall()
-        }
-        if config.normalized_col not in cols:
-            cur.execute(
-                f"ALTER TABLE {config.table} ADD COLUMN {config.normalized_col} TEXT"
-            )
-        if config.pos_col not in cols:
-            cur.execute(f"ALTER TABLE {config.table} ADD COLUMN {config.pos_col} TEXT")
-        conn.commit()
-
-    @staticmethod
-    def _backfill_cache_columns(conn: sqlite3.Connection, config=config) -> None:
-        cur = conn.cursor()
-        rows = cur.execute(
-            f"""
-            SELECT rowid, {config.text_col}, {config.normalized_col}, {config.pos_col}
-            FROM {config.table}
-            """
-        ).fetchall()
-        for rowid, raw_text, normalized_cached, pos_cached in rows:
-            text = raw_text or ""
-            normalized_value = normalized_cached
-            if not normalized_value:
-                normalized_value = Utils.norm(text)
-                cur.execute(
-                    f"""
-                    UPDATE {config.table}
-                    SET {config.normalized_col}=?
-                    WHERE rowid=?
-                    """,
-                    (normalized_value, rowid),
-                )
-            if not pos_cached:
-                pos_tags = Utils.tag_pos_tokens(normalized_value.split())
-                cur.execute(
-                    f"""
-                    UPDATE {config.table}
-                    SET {config.pos_col}=?
-                    WHERE rowid=?
-                    """,
-                    (json.dumps(pos_tags, ensure_ascii=False), rowid),
-                )
-        conn.commit()
-
-    @staticmethod
-    def ensure_cached_columns(current_db, config=config):
-        conn = sqlite3.connect(config.db_path + f"/{current_db}")
-        try:
-            Utils._ensure_cached_columns(conn, config=config)
-            Utils._backfill_cache_columns(conn, config=config)
-        finally:
-            conn.close()
+    def tag_pos_text(utils_class, text: str) -> list[str]:
+        return utils_class.tag_pos_tokens(Utils.norm(text).split())
 
     @staticmethod
     def get_txt_from_db(current_db, config=config):
-        Utils.ensure_cached_columns(current_db, config=config)
-        conn = sqlite3.connect(config.db_path + f"/{current_db}")
-        try:
-            cur = conn.cursor()
-            rows = cur.execute(
-                f"""
-                SELECT
-                    {config.text_col},
-                    {config.id_col},
-                    {config.normalized_col},
-                    {config.pos_col}
-                FROM {config.table}
-                """
-            ).fetchall()
-            return rows
-        finally:
-            conn.close()
+        return ranking_init.get_txt_from_db(
+            current_db,
+            config=config,
+            norm_fn=Utils.norm,
+            tag_pos_tokens_fn=Utils.tag_pos_tokens,
+        )
 
     @staticmethod
     def get_cand_txt():
         global cand_txt
         global cand_meta
-        with open(config.hadith_txt, "r") as f:
-            txt = f.readlines()
-        cand_txt = defaultdict(list)
-        for i, line in enumerate(txt):
-            line = line.strip()
-            if not line:
-                continue
-            cand_txt[line].append(i)
-        cand_meta = {}
-        for line in cand_txt.keys():
-            normalized_value = Utils.norm(line)
-            cand_meta[line] = {
-                "normalized": normalized_value,
-                "pos": Utils.tag_pos_tokens(normalized_value.split()),
-            }
+        cand_txt, cand_meta = ranking_init.build_candidate_cache(
+            config.hadith_txt,
+            norm_fn=Utils.norm,
+            tag_pos_tokens_fn=Utils.tag_pos_tokens,
+        )
 
     @staticmethod
     def run():
@@ -196,11 +117,17 @@ class StopWords:
     def stop_words():
         docs = [meta["normalized"] for meta in cand_meta.values()]
         if not docs:
-            return {"p95": 0.0, "words_above_p95": [], "tag_count": {}}
-        X, fitted_vec = vec(docs, stop_words=None, max_df=1.0, return_vectorizer=True)
+            # return {"p95": 0.0, "words_above_p95": [], "tag_count": {}}
+            raise ValueError("No documents available to compute stop words.")
+        tfidf_matrix, fitted_vec = vec(
+            docs,
+            stop_words=None,
+            max_df=_dynamic_max_df(docs),
+            return_vectorizer=True,
+        )
         vocab_indices = list(fitted_vec.vocabulary_.values())
         ratios = np.array([
-            (X[:, idx] > 0).sum() / len(docs)
+            (tfidf_matrix[:, idx] > 0).sum() / len(docs)
             for idx in vocab_indices
         ])
         p95 = np.percentile(ratios, 95)
@@ -212,20 +139,42 @@ class StopWords:
         tags = Utils.tag_pos_tokens(words_above(p95))
         tag_count = Counter(tags)
         return {
+            "hint": 
+            "p95 ist die dynamische Schwelle fuer sehr haeufige Woerter; "
+            "words_above_p95 zeigt potenzielles Rauschen; "
+            "tag_count zeigt die POS-Verteilung dieser haeufigen Woerter zur Plausibilisierung.",
+            
             "p95": float(p95),
             "words_above_p95": words_above(p95),
             "tag_count": dict(tag_count),
         }
 
 
-def vec(corpus, stop_words=None, max_df=1.0, return_vectorizer=False):
+def _dynamic_max_df(corpus) -> float:
+    docs = [utils.norm(doc).split() for doc in corpus if str(doc).strip()]
+    if not docs:
+        return 1.0
+    doc_count = len(docs)
+    df_counter = Counter()
+    for tokens in docs:
+        df_counter.update(set(tokens))
+    if not df_counter:
+        return 1.0
+    ratios = np.array([count / float(doc_count) for count in df_counter.values()])
+    p95 = float(np.percentile(ratios, 95))
+    return min(0.99, max(0.01, p95))
+
+
+def vec(corpus, stop_words=None, max_df=None, return_vectorizer=False):
+    if max_df is None:
+        max_df = _dynamic_max_df(corpus)
     fitted_vec = TfidfVectorizer(
         preprocessor=utils.norm, stop_words=stop_words, max_df=max_df
     )
-    X = fitted_vec.fit_transform(corpus)
+    tfidf_matrix = fitted_vec.fit_transform(corpus)
     if return_vectorizer:
-        return X, fitted_vec
-    return X
+        return tfidf_matrix, fitted_vec
+    return tfidf_matrix
 
 
 def _coarse_pos(pos_tag: str) -> str:
@@ -244,20 +193,25 @@ def _coarse_pos(pos_tag: str) -> str:
 
 
 def _pos_weight(pos_tag: str) -> float:
-    return config.POS_WEIGHTS.get(_coarse_pos(pos_tag), 1.0)
+    return config.POS_WEIGHTS[_coarse_pos(pos_tag)]
 
 
 def _parse_pos(pos_value: Any) -> list[str]:
-    if isinstance(pos_value, list):
+    if pos_value is None:
+        raise ValueError("POS value cannot be None.")
+    if isinstance(pos_value, (list, tuple)):
         return [str(x) for x in pos_value]
     if isinstance(pos_value, str) and pos_value.strip():
         try:
             parsed = json.loads(pos_value)
-            if isinstance(parsed, list):
-                return [str(x) for x in parsed]
-        except json.JSONDecodeError:
-            return pos_value.split()
-    return []
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "POS must be stored as a JSON array string."
+            ) from exc
+        if isinstance(parsed, list):
+            return [str(x) for x in parsed]
+        raise ValueError("POS JSON must decode to an array.")
+    raise TypeError("Unsupported POS payload type. Expected JSON array string or list/tuple.")
 
 
 def _flatten_texts(value: Any) -> list[str]:
@@ -300,7 +254,11 @@ def _dynamic_bleu_weights(
         (avg_weight**n) / np.sqrt(float(n))
         for n in range(1, max_order + 1)
     ]
-    total = float(sum(order_scores)) or 1.0
+    total = sum(order_scores)
+    if total == 0:
+        raise ValueError("Total weight cannot be zero.")
+    total = float(total)
+
     return [float(x / total) for x in order_scores]
 
 
@@ -323,13 +281,7 @@ def f1(
             candidate_pos=candidate_pos,
         )
     if len(wheights) != max_order:
-        if len(wheights) > max_order:
-            wheights = wheights[:max_order]
-        else:
-            missing = max_order - len(wheights)
-            wheights = list(wheights) + ([0.0] * missing)
-        total = float(sum(wheights)) or 1.0
-        wheights = [float(x / total) for x in wheights]
+        raise ValueError(f"Length of weights must match max_order ({max_order}).")
 
     bleu_results = bleu_metric.compute(
         predictions=candidate,
