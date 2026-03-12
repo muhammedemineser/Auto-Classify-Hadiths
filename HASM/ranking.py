@@ -180,6 +180,7 @@ class Utils:
             norm_fn=Utils.norm,
             tag_pos_tokens_fn=Utils.tag_pos_tokens,
         )
+        return cand_txt, cand_meta
 
     @staticmethod
     def run():
@@ -188,6 +189,18 @@ class Utils:
         for db_rows in db_rows_by_book:
             instances.match(db_rows, cand_txt)
         return instances
+
+    @staticmethod
+    def char_idx_to_token_idx(tokens: str, char_idx: list) -> list:
+        indexes = []
+        for idx in char_idx:
+            pos = 0
+            for i, token in enumerate(tokens.split()):
+                pos += len(token) + 1
+                if idx < pos:
+                    indexes.append(i)
+                    break
+        return indexes
 
 
 utils = Utils()

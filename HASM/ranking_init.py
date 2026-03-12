@@ -9,14 +9,16 @@ from typing import Any, Callable
 def _ensure_cached_columns(conn: sqlite3.Connection, config) -> None:
     cur = conn.cursor()
     cols = {
-        row[1]
-        for row in cur.execute(f"PRAGMA table_info({config.table})").fetchall()
+        row[1] for row in cur.execute(f"PRAGMA table_info({config.table})").fetchall()
     }
     if config.normalized_col not in cols:
-        cur.execute(f"ALTER TABLE {config.table} ADD COLUMN {config.normalized_col} TEXT")
+        cur.execute(
+            f"ALTER TABLE {config.table} ADD COLUMN {config.normalized_col} TEXT"
+        )
     if config.pos_col not in cols:
         cur.execute(f"ALTER TABLE {config.table} ADD COLUMN {config.pos_col} TEXT")
     conn.commit()
+
 
 def ensure_cached_columns(
     current_db: str,
@@ -36,6 +38,7 @@ def ensure_cached_columns(
         )
     finally:
         conn.close()
+
 
 def _backfill_cache_columns(
     conn: sqlite3.Connection,
@@ -138,3 +141,7 @@ def build_candidate_cache(
             "pos": tag_pos_tokens_fn(normalized_value.split()),
         }
     return cand_txt, cand_meta
+
+
+if __name__ == "__main__":
+    NotImplementedError
