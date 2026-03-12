@@ -1,4 +1,4 @@
-#!/home/muhammed-emin-eser/desk/apps/Auto-Classify-Hadiths/.venv/bin/python3
+#!/home/mo/desk/apps/classify/.venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

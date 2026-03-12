@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import difflib
 import json
 import re
 import unicodedata
@@ -372,9 +372,14 @@ class TopLevel(Ranking):
     def like_equal(ref, cand):
         A = ref.split()
         B = cand.split()
-        if len(A) != len(B):
-            return False
-        if len(set(A) ^ set(B)) <= len(A) * 0.2:
+        sm = difflib.SequenceMatcher(None, A, B)
+        diff_len = 0
+
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag != "equal":
+                diff_len += max(i2 - i1, j2 - j1)
+
+        if diff_len < len(max(A, B)) * 0.3:
             return True
         return False
 

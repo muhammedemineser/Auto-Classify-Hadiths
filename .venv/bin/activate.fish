@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/muhammed-emin-eser/desk/apps/Auto-Classify-Hadiths/.venv
+set -gx VIRTUAL_ENV /home/mo/desk/apps/classify/.venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
