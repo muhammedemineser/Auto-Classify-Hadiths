@@ -191,16 +191,19 @@ class Utils:
         return instances
 
     @staticmethod
-    def char_idx_to_token_idx(tokens: str, char_idx: list) -> list:
-        indexes = []
+    def char_idx_to_token_idx(tokens: str, char_idx: list) -> set:
+        indexes: list[int] = []
+        lengths: list[int] = []
+
         for idx in char_idx:
             pos = 0
             for i, token in enumerate(tokens.split()):
                 pos += len(token) + 1
                 if idx < pos:
                     indexes.append(i)
+                    lengths.append(len(token))
                     break
-        return indexes
+        return tuple(indexes), tuple(lengths)
 
 
 utils = Utils()
