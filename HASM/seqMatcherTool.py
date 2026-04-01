@@ -4,15 +4,16 @@ from ranking import utils, config, StopWords
 from pathlib import Path
 import argparse
 import json
-import evaluate
-from ranking import f1
+from sacrebleu.metrics import BLEU
 
 BASE_DIR = Path(__file__).resolve().parent
 
 
 def _pos_weight(pos_tag):
     tag = (pos_tag or "").lower()
-    return config.POS_WEIGHTS.get(tag, 1.0)
+    if tag not in config.POS_WEIGHTS:
+        raise KeyError(f"Unknown POS tag '{tag}' not found in config.POS_WEIGHTS.")
+    return config.POS_WEIGHTS[tag]
 
 
 def _parse_pos(pos_value):
@@ -51,6 +52,74 @@ def _dynamic_bleu_weights(max_order, reference_pos):
     ]
     total = float(sum(order_scores))
     return [float(x / total) for x in order_scores]
+
+
+def f1(reference, candidate, wheights=None, max_order=2, reference_pos=None):
+    if wheights is None:
+        wheights = _dynamic_bleu_weights(
+            max_order=max_order,
+            reference_pos=reference_pos,
+        )
+    if len(wheights) != max_order:
+        raise ValueError(f"Length of weights must match max_order ({max_order}).")
+
+    reference_list = reference if isinstance(reference, list) else [reference]
+    candidate_list = candidate if isinstance(candidate, list) else [candidate]
+
+    bleu_obj = BLEU(max_ngram_order=max_order)
+    bleu_obj.weights = wheights
+    bleu_results = bleu_obj.corpus_score(candidate_list, [reference_list])
+
+    P = bleu_results.score / 100
+    R = _rouge_l(reference_list[0], candidate_list[0])
+    beta = 0.7
+
+    denom = (beta**2 * P + R) or 1e-12
+    f1_score = (1 + beta**2) * (P * R) / denom
+    return {"bleu": P, "rougeL": R, "f1": f1_score, "weights": wheights}
+
+
+def _ensure_pos_coverage(indices, pos_tags, side, item_id):
+    if not indices:
+        return
+    min_idx = min(int(v) for v in indices)
+    max_idx = max(int(v) for v in indices)
+    if min_idx < 0 or max_idx >= len(pos_tags):
+        raise IndexError(
+            f"{side} POS index out of range at ID:{item_id}. "
+            f"index-range=[{min_idx},{max_idx}] pos-len={len(pos_tags)}"
+        )
+
+
+def _lcs_length(a_tokens, b_tokens):
+    n = len(a_tokens)
+    m = len(b_tokens)
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        ai = a_tokens[i - 1]
+        for j in range(1, m + 1):
+            if ai == b_tokens[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = (
+                    dp[i - 1][j] if dp[i - 1][j] >= dp[i][j - 1] else dp[i][j - 1]
+                )
+    return dp[n][m]
+
+
+def _rouge_l(reference, candidate):
+    ref_tokens = str(reference).split()
+    cand_tokens = str(candidate).split()
+    if not ref_tokens or not cand_tokens:
+        return 0.0
+    lcs = _lcs_length(ref_tokens, cand_tokens)
+    recall = lcs / len(ref_tokens)
+    precision = lcs / len(cand_tokens)
+    beta = 1.2
+    denom = recall + (beta**2) * precision
+    if denom == 0:
+        return 0.0
+    return ((1 + beta**2) * recall * precision) / denom
 
 
 def diff_to_matrix(ref, cand):
@@ -119,6 +188,7 @@ def main():
     config.text_col = args.text_col
     config.normalized_col = args.normalized_col
     config.id_col = args.id_col
+    config.hadith_txt = args.hadith_txt
     # Provisorisch
     config.hadith_txt = (
         "/home/muhammed-emin-eser/desk/projects/classify/HASM/Data/diff.txt"
@@ -130,8 +200,11 @@ def main():
     print("Stop words:", stop_words_info)
 
     for i, (key, val) in enumerate(cand_meta.items()):
+        ref_norm = db_txt[i][2]
+        ref_pos = _parse_pos(db_txt[i][3])
+        cand_pos = _parse_pos(val["pos"])
         vec1_ids, vec1_lens, vec2_ids, vec2_lens = diff_to_matrix(
-            val["normalized"], db_txt[i][0]
+            val["normalized"], ref_norm
         )
         try:
             if vec1_ids is None:
@@ -140,15 +213,18 @@ def main():
         except ValueError:
             pass
 
-        pos_matrix_1 = np.vectorize(
-            lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)])
-        )(np.array([v for v in vec1_ids], dtype=np.int16))
-        pos_matrix_2 = np.vectorize(
-            lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)])
-        )(np.array([v for v in vec2_ids], dtype=np.int16))
+        _ensure_pos_coverage(vec1_ids, cand_pos, side="candidate", item_id=i + 1)
+        _ensure_pos_coverage(vec2_ids, ref_pos, side="reference", item_id=i + 1)
 
-        power_v1 = np.array(vec1_lens, dtype=np.int64) * pos_matrix_1[vec1_ids]
-        power_v2 = np.array(vec2_lens, dtype=np.int64) * pos_matrix_2[vec2_ids]
+        pos_matrix_1 = np.array(
+            [_pos_weight(cand_pos[int(v)]) for v in vec1_ids], dtype=np.float64
+        )
+        pos_matrix_2 = np.array(
+            [_pos_weight(ref_pos[int(v)]) for v in vec2_ids], dtype=np.float64
+        )
+
+        power_v1 = np.array(vec1_lens, dtype=np.float64) * pos_matrix_1
+        power_v2 = np.array(vec2_lens, dtype=np.float64) * pos_matrix_2
 
         pos = np.where(power_v1 > 0, power_v1, 0)
         pos = np.append(pos, np.where(power_v2 > 0, power_v2, 0))
@@ -158,10 +234,10 @@ def main():
         percentage = np.sum(pos) / (np.sum(pos) + (np.sum(neg) * (-1)))
         f1_result = f1(
             reference=val["normalized"],
-            candidate=db_txt[i][0],
+            candidate=ref_norm,
             reference_pos=val["pos"],
         )
-        final_score = percentage * f1_result["f1"]
+        final_score = (percentage * f1_result["f1"]) * 2
 
         print(f"ID:{i+1} {final_score*100:.2f}", "% Übereinstimmung")
 
