@@ -5,8 +5,87 @@ from ranking import utils, config
 from pathlib import Path
 from math import factorial
 import argparse
+import json
+import evaluate
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _pos_weight(str pos_tag):
+    tag = (pos_tag or "").lower()
+    return config.POS_WEIGHTS.get(tag, 1.0)
+
+
+def _parse_pos(pos_value):
+    if pos_value is None:
+        raise ValueError("POS value cannot be None.")
+    if isinstance(pos_value, (list, tuple)):
+        return [str(x) for x in pos_value]
+    if isinstance(pos_value, str) and pos_value.strip():
+        try:
+            parsed = json.loads(pos_value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("POS must be stored as a JSON array string.") from exc
+        if isinstance(parsed, list):
+            return [str(x) for x in parsed]
+        raise ValueError("POS JSON must decode to an array.")
+    raise TypeError(
+        "Unsupported POS payload type. Expected JSON array string or list/tuple."
+    )
+
+
+def _dynamic_bleu_weights(int max_order, reference_pos):
+    if reference_pos is None:
+        raise ValueError(
+            "reference_pos is required. Compute POS once during initialization and pass it to f1()."
+        )
+    pos_tags = _parse_pos(reference_pos)
+    if not pos_tags:
+        raise ValueError(
+            "reference_pos is empty. POS must be precomputed in initialization stage."
+        )
+
+    token_weights = [_pos_weight(tag) for tag in pos_tags] or [1.0]
+    avg_weight = float(sum(token_weights) / len(token_weights))
+    order_scores = [
+        (avg_weight**n) / np.sqrt(float(n)) for n in range(1, max_order + 1)
+    ]
+    total = float(sum(order_scores))
+    return [float(x / total) for x in order_scores]
+
+
+def f1(reference, candidate, wheights=None, int max_order=2, reference_pos=None):
+    bleu_metric = evaluate.load("bleu")
+    rouge_metric = evaluate.load("rouge")
+
+    if wheights is None:
+        wheights = _dynamic_bleu_weights(
+            max_order=max_order,
+            reference_pos=reference_pos,
+        )
+    if len(wheights) != max_order:
+        raise ValueError(f"Length of weights must match max_order ({max_order}).")
+
+    reference_list = reference if isinstance(reference, list) else [reference]
+    candidate_list = candidate if isinstance(candidate, list) else [candidate]
+
+    bleu_results = bleu_metric.compute(
+        predictions=candidate_list,
+        references=reference_list,
+        max_order=max_order,
+        weights=wheights,
+    )
+    rouge_results = rouge_metric.compute(
+        predictions=candidate_list, references=reference_list
+    )
+
+    P = bleu_results["bleu"]
+    R = rouge_results["rougeL"]
+    beta = 0.7
+
+    denom = (beta**2 * P + R) or 1e-12
+    f1_score = (1 + beta**2) * (P * R) / denom
+    return {"bleu": P, "rougeL": R, "f1": f1_score, "weights": wheights}
 
 def diff_to_matrix(str ref, str cand):
     cdef list vec1_ids = []
@@ -44,9 +123,9 @@ def diff_to_matrix(str ref, str cand):
                     cand, [e for e in range(list_m[3], list_m[4] + 1)]
                 )
                 vec1_ids += _1_ids
-                vec1_lens += [factorial(l) * list_m[0] for l in _1_lens]
+                vec1_lens += [l * list_m[0] for l in _1_lens]
                 vec2_ids += _2_ids
-                vec2_lens += [factorial(l) * list_m[0] for l in _2_lens]
+                vec2_lens += [l * list_m[0] for l in _2_lens]
             except IndexError:
                 pass
 
@@ -89,7 +168,9 @@ def main():
     cdef np.ndarray[np.float64_t, ndim=1] pos
     cdef np.ndarray[np.float64_t, ndim=1] neg
     cdef float percentage = 0.0
+    cdef float final_score = 0.0
     cdef dict val = {}
+    cdef dict f1_result = {}
     for i, (key, val) in enumerate(cand_meta.items()):
         vec1_ids, vec1_lens, vec2_ids, vec2_lens = diff_to_matrix(
             val["normalized"], db_txt[i][0]
@@ -117,8 +198,14 @@ def main():
         neg = np.append(neg, np.where(power_v2 < 0, power_v2, 0))
 
         percentage = np.sum(pos) / (np.sum(pos) + (np.sum(neg) * (-1)))
+        f1_result = f1(
+            reference=val["normalized"],
+            candidate=db_txt[i][0],
+            reference_pos=val["pos"],
+        )
+        final_score = percentage * f1_result["f1"]
 
-        print(f"ID:{i+1} {percentage*100:.2f}", "% Übereinstimmung")
+        print(f"ID:{i+1} {final_score*100:.2f}", "% Übereinstimmung")
 
 
 if __name__ == "__main__":
