@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Any, Iterable, Optional
+from sacrebleu.metrics import BLEU
 
 import arabic_reshaper
 import evaluate
@@ -337,15 +338,12 @@ def f1(
     if len(wheights) != max_order:
         raise ValueError(f"Length of weights must match max_order ({max_order}).")
 
-    bleu_results = bleu_metric.compute(
-        predictions=candidate,
-        references=reference,
-        max_order=max_order,
-        weights=wheights,
-    )
     rouge_results = rouge_metric.compute(predictions=candidate, references=reference)
 
-    P = bleu_results["bleu"]
+    bleu_obj = BLEU(max_ngram_order=max_order)
+    bleu_obj.weights = wheights
+    bleu_results = bleu_obj.corpus_score(candidate, [reference])
+    P = bleu_results.score / 100
     R = rouge_results["rougeL"]
     beta = 0.7
 

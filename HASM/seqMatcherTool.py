@@ -1,17 +1,16 @@
 from difflib import SequenceMatcher
-cimport numpy as np
 import numpy as np
 from ranking import utils, config, StopWords
 from pathlib import Path
-from math import factorial
 import argparse
 import json
 import evaluate
+from ranking import f1
 
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def _pos_weight(str pos_tag):
+def _pos_weight(pos_tag):
     tag = (pos_tag or "").lower()
     return config.POS_WEIGHTS.get(tag, 1.0)
 
@@ -34,7 +33,7 @@ def _parse_pos(pos_value):
     )
 
 
-def _dynamic_bleu_weights(int max_order, reference_pos):
+def _dynamic_bleu_weights(max_order, reference_pos):
     if reference_pos is None:
         raise ValueError(
             "reference_pos is required. Compute POS once during initialization and pass it to f1()."
@@ -54,49 +53,13 @@ def _dynamic_bleu_weights(int max_order, reference_pos):
     return [float(x / total) for x in order_scores]
 
 
-def f1(reference, candidate, wheights=None, int max_order=2, reference_pos=None):
-    bleu_metric = evaluate.load("bleu")
-    rouge_metric = evaluate.load("rouge")
-
-    if wheights is None:
-        wheights = _dynamic_bleu_weights(
-            max_order=max_order,
-            reference_pos=reference_pos,
-        )
-    if len(wheights) != max_order:
-        raise ValueError(f"Length of weights must match max_order ({max_order}).")
-
-    reference_list = reference if isinstance(reference, list) else [reference]
-    candidate_list = candidate if isinstance(candidate, list) else [candidate]
-
-    bleu_results = bleu_metric.compute(
-        predictions=candidate_list,
-        references=reference_list,
-        max_order=max_order,
-        weights=wheights,
-    )
-    rouge_results = rouge_metric.compute(
-        predictions=candidate_list, references=reference_list
-    )
-
-    P = bleu_results["bleu"]
-    R = rouge_results["rougeL"]
-    beta = 0.7
-
-    denom = (beta**2 * P + R) or 1e-12
-    f1_score = (1 + beta**2) * (P * R) / denom
-    return {"bleu": P, "rougeL": R, "f1": f1_score, "weights": wheights}
-
-def diff_to_matrix(str ref, str cand):
-    cdef list vec1_ids = []
-    cdef list vec1_lens = []
-    cdef list vec2_ids = []
-    cdef list vec2_lens = []
-    cdef object list_e = None
-    cdef object list_list = None
-    cdef list list_m = []
-    cdef list minus = ["replace", "delete", "insert"]
-    cdef str plus = "equal"
+def diff_to_matrix(ref, cand):
+    vec1_ids = []
+    vec1_lens = []
+    vec2_ids = []
+    vec2_lens = []
+    minus = ["replace", "delete", "insert"]
+    plus = "equal"
 
     for list_list in SequenceMatcher(None, ref, cand).get_grouped_opcodes():
         for list_e in list_list:
@@ -136,13 +99,14 @@ def diff_to_matrix(str ref, str cand):
 
 def main():
     parser = argparse.ArgumentParser(description="Sequence matcher tool")
-    parser.add_argument("-db","--db-path", default=str(BASE_DIR / "Data"))
+    parser.add_argument("-db", "--db-path", default=str(BASE_DIR / "Data"))
     parser.add_argument("--table", default="text")
     parser.add_argument("--text-col", default="text")
     parser.add_argument("--normalized-col", default="text")
     parser.add_argument("--id-col", default="id")
     parser.add_argument(
-        "-txt","--hadith-txt",
+        "-txt",
+        "--hadith-txt",
         default=str(
             BASE_DIR / "Data" / "Sahihah" / "sahihah_hadith_extracted_in_sittah.txt"
         ),
@@ -155,24 +119,16 @@ def main():
     config.text_col = args.text_col
     config.normalized_col = args.normalized_col
     config.id_col = args.id_col
-    config.hadith_txt = args.hadith_txt
+    # Provisorisch
+    config.hadith_txt = (
+        "/home/muhammed-emin-eser/desk/projects/classify/HASM/Data/diff.txt"
+    )
 
     db_txt = utils.get_txt_from_db(current_db=args.current_db, config=config)
     cand_txt, cand_meta = utils.get_cand_txt()
     stop_words_info = StopWords.stop_words()
     print("Stop words:", stop_words_info)
 
-    cdef int i = 0
-    cdef np.ndarray[np.float64_t, ndim=1] pos_matrix_1
-    cdef np.ndarray[np.float64_t, ndim=1] pos_matrix_2
-    cdef np.ndarray[np.float64_t, ndim=1] power_v1
-    cdef np.ndarray[np.float64_t, ndim=1] power_v2
-    cdef np.ndarray[np.float64_t, ndim=1] pos
-    cdef np.ndarray[np.float64_t, ndim=1] neg
-    cdef float percentage = 0.0
-    cdef float final_score = 0.0
-    cdef dict val = {}
-    cdef dict f1_result = {}
     for i, (key, val) in enumerate(cand_meta.items()):
         vec1_ids, vec1_lens, vec2_ids, vec2_lens = diff_to_matrix(
             val["normalized"], db_txt[i][0]
@@ -183,16 +139,16 @@ def main():
                 continue
         except ValueError:
             pass
-        pos_matrix_1 = np.vectorize(lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)]))(
-            np.array([v for v in vec1_ids],dtype=np.int16)
-        )
 
-        pos_matrix_2 = np.vectorize(lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)]))(
-            np.array([v for v in vec2_ids],dtype=np.int16)
-        )
+        pos_matrix_1 = np.vectorize(
+            lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)])
+        )(np.array([v for v in vec1_ids], dtype=np.int16))
+        pos_matrix_2 = np.vectorize(
+            lambda i: config.POS_WEIGHTS.get(val["pos"][int(i)])
+        )(np.array([v for v in vec2_ids], dtype=np.int16))
 
-        power_v1 = np.array(vec1_lens,dtype=np.int64) * pos_matrix_1[vec1_ids]
-        power_v2 = np.array(vec2_lens,dtype=np.int64) * pos_matrix_2[vec2_ids]
+        power_v1 = np.array(vec1_lens, dtype=np.int64) * pos_matrix_1[vec1_ids]
+        power_v2 = np.array(vec2_lens, dtype=np.int64) * pos_matrix_2[vec2_ids]
 
         pos = np.where(power_v1 > 0, power_v1, 0)
         pos = np.append(pos, np.where(power_v2 > 0, power_v2, 0))
