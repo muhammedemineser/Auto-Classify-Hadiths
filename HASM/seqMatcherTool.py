@@ -72,7 +72,7 @@ def f1(reference, candidate, wheights=None, max_order=2, reference_pos=None):
 
     P = bleu_results.score / 100
     R = _rouge_l(reference_list[0], candidate_list[0])
-    beta = 0.7
+    beta = 1
 
     denom = (beta**2 * P + R) or 1e-12
     f1_score = (1 + beta**2) * (P * R) / denom
@@ -180,7 +180,8 @@ def main():
             BASE_DIR / "Data" / "Sahihah" / "sahihah_hadith_extracted_in_sittah.txt"
         ),
     )
-    parser.add_argument("--current-db", default="diff_test2.db")
+    # Provisorisch
+    parser.add_argument("--current-db", default="ref.db")
     args = parser.parse_args()
 
     config.db_path = args.db_path
@@ -191,7 +192,7 @@ def main():
     config.hadith_txt = args.hadith_txt
     # Provisorisch
     config.hadith_txt = (
-        "/home/muhammed-emin-eser/desk/projects/classify/HASM/Data/diff.txt"
+        "/home/muhammed-emin-eser/desk/projects/classify/HASM/Data/cand.txt"
     )
 
     db_txt = utils.get_txt_from_db(current_db=args.current_db, config=config)
@@ -237,8 +238,15 @@ def main():
             candidate=ref_norm,
             reference_pos=val["pos"],
         )
-        final_score = (percentage * f1_result["f1"]) * 2
-
+        smaller = min(percentage, f1_result["f1"])
+        greater = max(percentage, f1_result["f1"])
+        final_score = ((greater - smaller) / 2) + smaller
+        print(
+            f"{f1_result["bleu"] = :.2f}",
+            f"{f1_result["rougeL"] = :.2f}",
+            f"{f1_result["f1"] = :.2f}",
+        )
+        print(f"{percentage = :.2f}")
         print(f"ID:{i+1} {final_score*100:.2f}", "% Übereinstimmung")
 
 

@@ -215,7 +215,7 @@ class StopWords:
 
     @staticmethod
     def stop_words():
-        docs = [meta["normalized"] for meta in cand_meta.values()]
+        docs = [meta for meta in cand_meta.keys()]
         if not docs:
             # return {"p95": 0.0, "words_above_p95": [], "tag_count": {}}
             raise ValueError("No documents available to compute stop words.")
