@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 import json
 from sacrebleu.metrics import BLEU
+from pprint import pprint
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -72,7 +73,7 @@ def f1(reference, candidate, wheights=None, max_order=2, reference_pos=None):
 
     P = bleu_results.score / 100
     R = _rouge_l(reference_list[0], candidate_list[0])
-    beta = 1
+    beta = 1.9
 
     denom = (beta**2 * P + R) or 1e-12
     f1_score = (1 + beta**2) * (P * R) / denom
@@ -122,6 +123,10 @@ def _rouge_l(reference, candidate):
     return ((1 + beta**2) * recall * precision) / denom
 
 
+def _stopword_factor(token, stop_words, stop_word_weight=0.25):
+    return float(stop_word_weight) if token in stop_words else 1.0
+
+
 def diff_to_matrix(ref, cand):
     vec1_ids = []
     vec1_lens = []
@@ -167,6 +172,8 @@ def diff_to_matrix(ref, cand):
 
 
 def main():
+    # { accept/reject : { id : [results] }}
+    judgement: dict[str, dict[int, list]] = {"accept": {}, "reject": {}}
     parser = argparse.ArgumentParser(description="Sequence matcher tool")
     parser.add_argument("-db", "--db-path", default=str(BASE_DIR / "Data"))
     parser.add_argument("--table", default="text")
@@ -181,7 +188,7 @@ def main():
         ),
     )
     # Provisorisch
-    parser.add_argument("--current-db", default="ref.db")
+    parser.add_argument("--current-db", default="ref.sqlite3")
     args = parser.parse_args()
 
     config.db_path = args.db_path
@@ -197,11 +204,18 @@ def main():
 
     db_txt = utils.get_txt_from_db(current_db=args.current_db, config=config)
     cand_txt, cand_meta = utils.get_cand_txt()
-    stop_words_info = StopWords.stop_words()
-    print("Stop words:", stop_words_info)
+    corpus_docs = [val["normalized"] for val in cand_meta.values()] + [
+        row[2] for row in db_txt if row and len(row) > 2 and row[2]
+    ]
+    stop_words_info = StopWords.stop_words(corpus=corpus_docs)
+    stop_words = set(stop_words_info.get("stop_words") or [])
+    stop_word_weight = float(stop_words_info.get("stop_word_weight", 0.25))
+    # print("Stop words:", stop_words_info)
 
     for i, (key, val) in enumerate(cand_meta.items()):
         ref_norm = db_txt[i][2]
+        ref_tokens = ref_norm.split()
+        cand_tokens = val["normalized"].split()
         ref_pos = _parse_pos(db_txt[i][3])
         cand_pos = _parse_pos(val["pos"])
         vec1_ids, vec1_lens, vec2_ids, vec2_lens = diff_to_matrix(
@@ -209,7 +223,7 @@ def main():
         )
         try:
             if vec1_ids is None:
-                print(f"ID:{i+1} 100.00 % Übereinstimmung")
+                # print(f"ID:{i+1} 100.00 % Übereinstimmung")
                 continue
         except ValueError:
             pass
@@ -218,10 +232,20 @@ def main():
         _ensure_pos_coverage(vec2_ids, ref_pos, side="reference", item_id=i + 1)
 
         pos_matrix_1 = np.array(
-            [_pos_weight(cand_pos[int(v)]) for v in vec1_ids], dtype=np.float64
+            [
+                _pos_weight(cand_pos[int(v)])
+                * _stopword_factor(cand_tokens[int(v)], stop_words, stop_word_weight)
+                for v in vec1_ids
+            ],
+            dtype=np.float64,
         )
         pos_matrix_2 = np.array(
-            [_pos_weight(ref_pos[int(v)]) for v in vec2_ids], dtype=np.float64
+            [
+                _pos_weight(ref_pos[int(v)])
+                * _stopword_factor(ref_tokens[int(v)], stop_words, stop_word_weight)
+                for v in vec2_ids
+            ],
+            dtype=np.float64,
         )
 
         power_v1 = np.array(vec1_lens, dtype=np.float64) * pos_matrix_1
@@ -241,13 +265,33 @@ def main():
         smaller = min(percentage, f1_result["f1"])
         greater = max(percentage, f1_result["f1"])
         final_score = ((greater - smaller) / 2) + smaller
-        print(
-            f"{f1_result["bleu"] = :.2f}",
-            f"{f1_result["rougeL"] = :.2f}",
-            f"{f1_result["f1"] = :.2f}",
-        )
-        print(f"{percentage = :.2f}")
-        print(f"ID:{i+1} {final_score*100:.2f}", "% Übereinstimmung")
+        # print(
+        #     f'bleu={f1_result["bleu"]:.2f}',
+        #     f'rougeL={f1_result["rougeL"]:.2f}',
+        #     f'f1={f1_result["f1"]:.2f}',
+        # )
+        # print(f"percentage={percentage:.2f}")
+        # print(f"ID:{i+1} {final_score*100:.2f}", "% Übereinstimmung")
+
+        if final_score >= 0.5:
+            judgement["accept"][i + 1] = [
+                f'bleu={f1_result["bleu"]:.2f}',
+                f'rougeL={f1_result["rougeL"]:.2f}',
+                f'f1={f1_result["f1"]:.2f}',
+                f"percentage={percentage:.2f}",
+                f"ID:{i+1} {final_score*100:.2f}",
+                "% Übereinstimmung",
+            ]
+        else:
+            judgement["reject"][i + 1] = [
+                f'bleu={f1_result["bleu"]:.2f}',
+                f'rougeL={f1_result["rougeL"]:.2f}',
+                f'f1={f1_result["f1"]:.2f}',
+                f"percentage={percentage:.2f}",
+                f"ID:{i+1} {final_score*100:.2f}",
+                "% Übereinstimmung",
+            ]
+    print(json.dumps(judgement))
 
 
 if __name__ == "__main__":

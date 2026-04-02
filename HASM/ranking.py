@@ -214,10 +214,10 @@ class StopWords:
     pos_wheights = config.POS_WEIGHTS
 
     @staticmethod
-    def stop_words():
-        docs = [meta for meta in cand_meta.keys()]
+    def stop_words(corpus: Optional[Iterable[str]] = None):
+        docs = [str(doc) for doc in (corpus if corpus is not None else cand_meta.keys())]
+        docs = [doc for doc in docs if doc.strip()]
         if not docs:
-            # return {"p95": 0.0, "words_above_p95": [], "tag_count": {}}
             raise ValueError("No documents available to compute stop words.")
         tfidf_matrix, fitted_vec = vec(
             docs,
@@ -243,6 +243,8 @@ class StopWords:
             "tag_count zeigt die POS-Verteilung dieser haeufigen Woerter zur Plausibilisierung.",
             "p95": float(p95),
             "words_above_p95": words_above(p95),
+            "stop_words": words_above(p95),
+            "stop_word_weight": 0.25,
             "tag_count": dict(tag_count),
         }
 

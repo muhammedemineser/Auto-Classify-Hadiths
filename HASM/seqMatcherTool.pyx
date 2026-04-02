@@ -124,6 +124,10 @@ def _rouge_l(reference, candidate):
     return ((1 + beta**2) * recall * precision) / denom
 
 
+def _stopword_factor(token, stop_words, stop_word_weight=0.25):
+    return float(stop_word_weight) if token in stop_words else 1.0
+
+
 def diff_to_matrix(str ref, str cand):
     cdef list vec1_ids = []
     cdef list vec1_lens = []
@@ -196,7 +200,12 @@ def main():
 
     db_txt = utils.get_txt_from_db(current_db=args.current_db, config=config)
     cand_txt, cand_meta = utils.get_cand_txt()
-    stop_words_info = StopWords.stop_words()
+    corpus_docs = [val["normalized"] for val in cand_meta.values()] + [
+        row[2] for row in db_txt if row and len(row) > 2 and row[2]
+    ]
+    stop_words_info = StopWords.stop_words(corpus=corpus_docs)
+    stop_words = set(stop_words_info.get("stop_words") or [])
+    stop_word_weight = float(stop_words_info.get("stop_word_weight", 0.25))
     print("Stop words:", stop_words_info)
 
     cdef int i = 0
@@ -211,10 +220,14 @@ def main():
     cdef dict val = {}
     cdef dict f1_result = {}
     cdef str ref_norm = ""
+    cdef list ref_tokens = []
+    cdef list cand_tokens = []
     cdef list ref_pos = []
     cdef list cand_pos = []
     for i, (key, val) in enumerate(cand_meta.items()):
         ref_norm = db_txt[i][2]
+        ref_tokens = ref_norm.split()
+        cand_tokens = val["normalized"].split()
         ref_pos = _parse_pos(db_txt[i][3])
         cand_pos = _parse_pos(val["pos"])
         vec1_ids, vec1_lens, vec2_ids, vec2_lens = diff_to_matrix(
@@ -230,10 +243,20 @@ def main():
         _ensure_pos_coverage(vec2_ids, ref_pos, side="reference", item_id=i + 1)
 
         pos_matrix_1 = np.array(
-            [_pos_weight(cand_pos[int(v)]) for v in vec1_ids], dtype=np.float64
+            [
+                _pos_weight(cand_pos[int(v)])
+                * _stopword_factor(cand_tokens[int(v)], stop_words, stop_word_weight)
+                for v in vec1_ids
+            ],
+            dtype=np.float64,
         )
         pos_matrix_2 = np.array(
-            [_pos_weight(ref_pos[int(v)]) for v in vec2_ids], dtype=np.float64
+            [
+                _pos_weight(ref_pos[int(v)])
+                * _stopword_factor(ref_tokens[int(v)], stop_words, stop_word_weight)
+                for v in vec2_ids
+            ],
+            dtype=np.float64,
         )
 
         power_v1 = np.array(vec1_lens, dtype=np.float64) * pos_matrix_1
