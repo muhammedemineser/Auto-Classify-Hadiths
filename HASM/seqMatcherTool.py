@@ -7,6 +7,7 @@ import json
 from sacrebleu.metrics import BLEU
 from pprint import pprint
 
+
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -127,6 +128,18 @@ def _stopword_factor(token, stop_words, stop_word_weight=0.25):
     return float(stop_word_weight) if token in stop_words else 1.0
 
 
+def _short_candidate_bonus(reference, candidate, percentage):
+    ref_len = max(1, len(str(reference).split()))
+    cand_len = max(1, len(str(candidate).split()))
+    len_sim = min(ref_len, cand_len) / max(ref_len, cand_len)
+    shortness = max(0.0, 1.0 - (cand_len / 6.0))
+
+    # Reward only short candidates that already show strong overlap signal.
+    if shortness > 0.0 and len_sim >= 0.6 and percentage >= 0.65:
+        return 0.30 * shortness * len_sim
+    return 0.0
+
+
 def diff_to_matrix(ref, cand):
     vec1_ids = []
     vec1_lens = []
@@ -213,7 +226,7 @@ def main():
     # print("Stop words:", stop_words_info)
 
     for i, (key, val) in enumerate(cand_meta.items()):
-        ref_norm = db_txt[i][2]
+        ref_norm = " ".join(utils.normalize(db_txt[i][2]))
         ref_tokens = ref_norm.split()
         cand_tokens = val["normalized"].split()
         ref_pos = _parse_pos(db_txt[i][3])
@@ -256,15 +269,25 @@ def main():
         neg = np.where(power_v1 < 0, power_v1, 0)
         neg = np.append(neg, np.where(power_v2 < 0, power_v2, 0))
 
-        percentage = np.sum(pos) / (np.sum(pos) + (np.sum(neg) * (-1)))
+        percentage = (np.sum(pos) / (np.sum(pos) + (np.sum(neg) * (-1)))) * 0.9
         f1_result = f1(
             reference=val["normalized"],
             candidate=ref_norm,
             reference_pos=val["pos"],
         )
+        f1_result["f1"] *= 1.1
         smaller = min(percentage, f1_result["f1"])
         greater = max(percentage, f1_result["f1"])
         final_score = ((greater - smaller) / 2) + smaller
+        final_score = min(
+            1.0,
+            final_score
+            + _short_candidate_bonus(
+                reference=val["normalized"],
+                candidate=ref_norm,
+                percentage=percentage,
+            ),
+        )
         # print(
         #     f'bleu={f1_result["bleu"]:.2f}',
         #     f'rougeL={f1_result["rougeL"]:.2f}',
