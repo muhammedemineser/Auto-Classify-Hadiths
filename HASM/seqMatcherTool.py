@@ -1,11 +1,11 @@
 from difflib import SequenceMatcher
 import numpy as np
-from ranking import utils, config, StopWords
 from pathlib import Path
 import argparse
 import json
 from sacrebleu.metrics import BLEU
 from pprint import pprint
+from utils import utils, config, StopWords
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -189,10 +189,10 @@ def main():
     judgement: dict[str, dict[int, list]] = {"accept": {}, "reject": {}}
     parser = argparse.ArgumentParser(description="Sequence matcher tool")
     parser.add_argument("-db", "--db-path", default=str(BASE_DIR / "Data"))
-    parser.add_argument("--table", default="text")
-    parser.add_argument("--text-col", default="text")
-    parser.add_argument("--normalized-col", default="text")
-    parser.add_argument("--id-col", default="id")
+    parser.add_argument("--table", default="hadiths")
+    parser.add_argument("--text-col", default="Arabic_Matn")
+    parser.add_argument("--normalized-col", default="normalized")
+    parser.add_argument("--id-col", default="Hadith_number")
     parser.add_argument(
         "-txt",
         "--hadith-txt",
@@ -201,7 +201,10 @@ def main():
         ),
     )
     # Provisorisch
-    parser.add_argument("--current-db", default="ref.sqlite3")
+    parser.add_argument(
+        "--current-db",
+        default=str(BASE_DIR / "Data" / "Hadith" / "Bukhari.db"),
+    )
     args = parser.parse_args()
 
     config.db_path = args.db_path
@@ -210,10 +213,6 @@ def main():
     config.normalized_col = args.normalized_col
     config.id_col = args.id_col
     config.hadith_txt = args.hadith_txt
-    # Provisorisch
-    config.hadith_txt = (
-        "/home/muhammed-emin-eser/desk/projects/classify/HASM/Data/cand.txt"
-    )
 
     db_txt = utils.get_txt_from_db(current_db=args.current_db, config=config)
     cand_txt, cand_meta = utils.get_cand_txt()

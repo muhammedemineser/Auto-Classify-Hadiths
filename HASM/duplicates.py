@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Optional
 import glob, os, sqlite3
 import json
-from ranking import utils
+try:
+    from .utils import utils
+except ImportError:
+    from utils import utils
 
 BASE_DIR = Path(__file__).resolve().parent
 path_to_cand = BASE_DIR / "Data" / "Sahihah" / "sahihah_hadith_extracted_in_sittah.txt"
