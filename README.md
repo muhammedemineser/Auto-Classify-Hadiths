@@ -18,7 +18,7 @@ This branch contains a lightweight pipeline that turns raw Tafsir texts (Arabic 
 
 ## Data model
 
-- Source DB table: `<book>` with `id, text`.
+- Source DB table: `<book>` with `id, text, text_normalisiert i.e. normalized`.
 - Annotated DB tables:
   - `tafsir_analysis_<book>`: `id`, XML in `extracted_text_full`, normalized text in `extracted_text_normalized`, timestamps.
   - `tafsir_analysis_<book>_blocks` / `_chunks`: block/chunk breakdown with FK back to sections.
