@@ -30,7 +30,7 @@ from Tafsir.pipeline.analysis import check_divergent_rows
 from Tafsir.pipeline.analysis.compare_tafsir_texts import (
     get_anomalies as compare_anomalies,
 )
-from Tafsir.pipeline.analysis.data_cleaning import (
+from Tafsir.pipeline.analysis import (
     duplicated,
 )
 
