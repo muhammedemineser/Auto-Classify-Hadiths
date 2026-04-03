@@ -1,5 +1,6 @@
 import sys
 import subprocess
+from Tafsir.pipeline import app
 
 COMMANDS = {
     "NiceUI": [sys.executable, "-m", "tools.tafsir_gui.main"],
@@ -11,7 +12,7 @@ COMMANDS = {
         "-m",
         "Tafsir.pipeline.analysis.data_cleaning.rollback_pipeline",
     ],
-    "app": ["pipenv", "run", "uvicorn", "app:app", "--reload"],
+    "app": [sys.executable, "-m", "uvicorn", "Tafsir.pipeline.app:app", "--reload"],
 }
 
 

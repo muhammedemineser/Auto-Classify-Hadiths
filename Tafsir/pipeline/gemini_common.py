@@ -208,9 +208,7 @@ def backfill_normalized(engine_out, section_table: str) -> None:
 def insert_empty_section(engine, section_table: str, section_id: int) -> None:
     with engine.begin() as conn:
         conn.execute(
-            text(
-                f"INSERT OR IGNORE INTO {section_table} (id) VALUES (:id)"
-            ),
+            text(f"INSERT OR IGNORE INTO {section_table} (id) VALUES (:id)"),
             {"id": section_id},
         )
 

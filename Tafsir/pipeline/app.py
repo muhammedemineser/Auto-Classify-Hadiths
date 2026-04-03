@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import hashlib
 import html
 import os
@@ -154,6 +153,7 @@ def color_for_tag(tag: str) -> str:
     h = int(hashlib.sha1(tag.encode("utf-8")).hexdigest()[:6], 16) % 360
     return f"hsl({h}, 65%, 72%)"
 
+
 STRUCTURE_LABELS = {
     "tafsir_section": "Section",
     "tafsir_section_block": "Block",
@@ -260,9 +260,7 @@ class TafsirRepository:
         rows = conn.execute(f"PRAGMA table_info({table});").fetchall()
         return {r["name"] for r in rows}
 
-    def find_global_id(
-        self, surah: int, ayah: Optional[int] = None
-    ) -> Optional[int]:
+    def find_global_id(self, surah: int, ayah: Optional[int] = None) -> Optional[int]:
         """
         Resolve a Quran surah/ayah pair to the corresponding global ID.
         If ayah is None, returns the first ayah within the surah.
@@ -441,7 +439,9 @@ class TafsirRepository:
             for _, chunk_list in blocks.items():
                 block_content = "".join(chunk_list)
                 if block_content.strip():
-                    parts.append(f"<tafsir_section_block>{block_content}</tafsir_section_block>")
+                    parts.append(
+                        f"<tafsir_section_block>{block_content}</tafsir_section_block>"
+                    )
             if not parts:
                 return ""
             return f"<tafsir_section>{''.join(parts)}</tafsir_section>"
@@ -860,7 +860,9 @@ app.add_middleware(
 TAFSIR_CONFIGS = discover_tafsir_configs()
 tafsir_manager = TafsirManager(TAFSIR_CONFIGS, default_key=DEFAULT_TAFSIR.lower())
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 logger = logging.getLogger("tafsir")
 logging.basicConfig(level=logging.INFO)
@@ -874,7 +876,13 @@ async def generic_exception_handler(request, exc):  # type: ignore[override]
 
 @app.get("/")
 async def root():
-    return FileResponse("static/viewer.html")
+    viewer_path = STATIC_DIR / "viewer.html"
+    if viewer_path.exists():
+        return FileResponse(str(viewer_path))
+    return JSONResponse(
+        {"detail": "viewer not found (missing static/viewer.html)"},
+        status_code=404,
+    )
 
 
 @app.get("/health")

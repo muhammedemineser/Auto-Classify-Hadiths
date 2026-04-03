@@ -1,4 +1,8 @@
+import json
+import os
+import re
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from pathlib import Path
@@ -55,18 +59,89 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
 REPO_ROOT = cfg.PROJECT_ROOT
+LOGS_DIR = REPO_ROOT / "logs"
+_LOG_LOCK = threading.Lock()
+_CURRENT_LOG_JSON_PATH = LOGS_DIR / "structured_logs_default.json"
 
 
-def _write_log(path, entry):
-    log_path = Path(path).expanduser()
-    if log_path.is_absolute():
-        anchor = log_path.anchor
-        if anchor:
-            log_path = log_path.relative_to(anchor)
-    target_path = REPO_ROOT / log_path
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(target_path, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+def _sanitize_label(label: str | None) -> str:
+    if not label:
+        return "default"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(label))
+    return safe or "default"
+
+
+def _set_log_target(model_label: str | None) -> None:
+    """
+    Select the per-model structured log file to avoid overwriting entries
+    when multiple models are run sequentially.
+    """
+    global _CURRENT_LOG_JSON_PATH
+    suffix = _sanitize_label(model_label)
+    _CURRENT_LOG_JSON_PATH = LOGS_DIR / f"structured_logs_{suffix}.json"
+
+
+def _resolve_output_db_path(
+    db: str, exact_ids=None, explicit_path: str | Path | None = None
+) -> Path:
+    """
+    Decide where to persist annotations.
+
+    - default: <db>_annotated.sqlite3
+    - when exact_ids are provided: <db>_annotated_subset.sqlite3
+    - explicit path overrides both
+    """
+    if explicit_path:
+        return Path(explicit_path)
+    if exact_ids:
+        return cfg.ANNOTATED_DIR / f"{db}_annotated_subset.sqlite3"
+    return cfg.ANNOTATED_DIR / f"{db}_annotated.sqlite3"
+
+
+def _format_row_ids(row_id):
+    """Normalize a single row identifier for JSON logging."""
+
+    if row_id is None or isinstance(row_id, (list, tuple, set, dict)):
+        raise ValueError("row_id must be a single value")
+    try:
+        return str(int(row_id))
+    except (TypeError, ValueError) as exc:  # noqa: B904
+        raise ValueError("row_id must be convertible to int") from exc
+
+
+def _write_log(path, entry, *, row_id):
+    """
+    Append a log entry into the unified JSON log, grouped by row_id then log type.
+
+    JSON shape:
+    {
+      "<ROW_ID>": {
+        "<log_type>": ["entry1", "entry2", ...]
+      }
+    }
+    """
+
+    rid = _format_row_ids(row_id)
+    log_type = Path(path).stem  # e.g., responses, guard, progress, errors
+
+    _CURRENT_LOG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with _LOG_LOCK:
+        try:
+            data = json.loads(_CURRENT_LOG_JSON_PATH.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            data = {}
+        except json.JSONDecodeError:
+            data = {}
+
+        log_bucket = data.setdefault(rid, {})
+        log_bucket.setdefault(log_type, []).append(str(entry))
+
+        tmp_path = _CURRENT_LOG_JSON_PATH.with_suffix(".tmp")
+        tmp_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        tmp_path.replace(_CURRENT_LOG_JSON_PATH)
 
 
 OCR_REGION_RESPONSE = (17, 146, 712, 842)
@@ -146,7 +221,12 @@ def cleanup_cycle(
         time.sleep(0.7)
         pyautogui.click()
         print("Antwort gespeichert. Nächster Durchgang...")
-        _write_log("logs/responses.log", "cycle refreshed, response stored")
+        if record and record.get("id") is not None:
+            _write_log(
+                "logs/responses.log",
+                "cycle refreshed, response stored",
+                row_id=record["id"],
+            )
     pyperclip.copy("")  # free clipboard buffer
     time.sleep(0.5)
     pyautogui.click(**POINT_OPEN_BROWSER)  # (x=220,1053)
@@ -546,11 +626,6 @@ def bulk_insert_tafsir(engine, section_table, block_table, chunk_table, records)
     print(f"Erfolg: {len(normalized)} Datensätze in {section_table} eingefügt.")
     print(f"Erfolg: {block_total} Blocks in {block_table} eingefügt.")
     print(f"Erfolg: {chunk_total} Chunks in {chunk_table} eingefügt.")
-    _write_log(
-        "logs/bulk_insert.log",
-        f"{section_table}: sections={len(normalized)}, "
-        f"blocks={block_total}, chunks={chunk_total}",
-    )
 
 
 DBS = ["katheer", "waseet", "tabary", "sa3dy", "qortoby", "baghawy"]
@@ -558,16 +633,35 @@ DEFAULT_DB = "katheer"
 DEFAULT_START_ID = None
 
 
-def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
+def automate_gemini(
+    db,
+    start_id=DEFAULT_START_ID,
+    exact_ids=None,
+    output_db_path=None,
+    multiple_models: bool = False,
+):
     """
     Default: verarbeitet alle Zeilen ab ``start_id`` (inkl.) wie bisher.
     Neu: Wenn ``exact_ids`` angegeben ist, werden ausschließlich diese IDs
     (einzeln) abgearbeitet – nützlich für gezielte Nachträge / Rollbacks.
+    In diesem Modus wird automatisch eine Sidecar-DB
+    ``<db>_annotated_subset.sqlite3`` verwendet (oder der per ``output_db_path``
+    übergebene Pfad), um die Hauptdatenbank nicht zu verändern.
     """
+
+    if multiple_models:
+        print(
+            "--multiple-models wird in der GUI-Pipeline derzeit nicht unterstützt; "
+            "es wird das aktive Modell der Oberfläche verwendet."
+        )
+
+    # Route logs to a model-specific JSON to avoid clobbering entries when
+    # different models are run in separate sessions.
+    _set_log_target(os.getenv("GEMINI_MODEL_ID") or "default")
 
     i = 0
     db_path_in = cfg.BOOKS_DIR / f"{db}.sqlite3"
-    db_path_out = cfg.ANNOTATED_DIR / f"{db}_annotated.sqlite3"
+    db_path_out = _resolve_output_db_path(db, exact_ids, output_db_path)
 
     engine_in = create_engine(f"sqlite:///{db_path_in}")
     metadata_in = MetaData()
@@ -678,7 +772,11 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                     time.sleep(1.5)
 
                     print("Warte auf Antwort von Gemini...")
-                    _write_log("logs/progress.log", f"row={i}: waiting for response")
+                    _write_log(
+                        "logs/progress.log",
+                        "waiting for response",
+                        row_id=source_id,
+                    )
                     time.sleep(1.5)
                     pyautogui.moveTo(**POINT_EMPTY_CHATSPACE, duration=0.15)
                     pyautogui.click()
@@ -697,7 +795,9 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                             "Kein Code gefunden. Run wird pausiert, erneuter Versuch startet mit nächstem Durchlauf."
                         )
                         _write_log(
-                            "logs/progress.log", f"row={i}: no response detected"
+                            "logs/progress.log",
+                            "no response detected",
+                            row_id=source_id,
                         )
                         skipped_rows += 1
                         processed += 1
@@ -716,13 +816,13 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                         f"Guard: coverage={guard['token_coverage']:.2f}, overlap={guard['ngram_overlap']:.2f}, decision={decision}"
                     )
                     log_line = (
-                        f"row={i}, decision={decision}, "
+                        f"decision={decision}, "
                         f"coverage={guard['token_coverage']:.2f}, "
                         f"overlap={guard['ngram_overlap']:.2f}"
                     )
                     if decision == "retry":
                         log_line += f", attempt={attempts}"
-                    _write_log("logs/guard.log", log_line)
+                    _write_log("logs/guard.log", log_line, row_id=source_id)
 
                     if decision == "retry":
                         if attempts <= GUARD_MAX_RETRIES:
@@ -735,9 +835,10 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                         )
                         _write_log(
                             "logs/guard.log",
-                            f"row={i}, decision=skip, reason=guard_limit, "
+                            "decision=skip, reason=guard_limit, "
                             f"coverage={guard['token_coverage']:.2f}, "
                             f"overlap={guard['ngram_overlap']:.2f}",
+                            row_id=source_id,
                         )
                         insert_empty_section(engine_out, target_table, source_id)
                         skipped_rows += 1
@@ -745,8 +846,25 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                         break
 
                     if decision == "log":
+                        if attempts <= GUARD_MAX_RETRIES:
+                            print(
+                                f"Guard im Grenzbereich; Wiederholung (Versuch {attempts}/{GUARD_MAX_RETRIES + 1})."
+                            )
+                            _write_log(
+                                "logs/progress.log",
+                                f"guard borderline, retry attempt={attempts}",
+                                row_id=source_id,
+                            )
+                            continue
                         print(
-                            "Guard im Grenzbereich; Eintrag wird protokolliert, aber nicht eingefügt."
+                            "Guard im Grenzbereich; maximale Versuche erreicht – Eintrag wird protokolliert, aber nicht eingefügt."
+                        )
+                        _write_log(
+                            "logs/guard.log",
+                            "decision=skip, reason=guard_limit_borderline, "
+                            f"coverage={guard['token_coverage']:.2f}, "
+                            f"overlap={guard['ngram_overlap']:.2f}",
+                            row_id=source_id,
                         )
                         insert_empty_section(engine_out, target_table, source_id)
                         skipped_rows += 1
@@ -781,7 +899,8 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                     print("Antwort gespeichert. Nächster Durchgang...")
                     _write_log(
                         "logs/responses.log",
-                        f"row={i}: response accepted, total_processed={total_processed}",
+                        f"response accepted, total_processed={total_processed}",
+                        row_id=source_id,
                     )
                     break
 
@@ -831,10 +950,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
             print(
                 f"Einzelmodus: {processed}/{len(rows_to_process)} IDs verarbeitet (db={db})."
             )
-            _write_log(
-                "logs/progress.log",
-                f"{db}: single_ids processed={processed}, requested={len(rows_to_process)}",
-            )
             return
 
         # --- Modus 2: normaler Sequenzlauf ab start_id ----------------------
@@ -866,10 +981,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                 print(
                     f"Bereits vollständig: {db} ({effective_processed_count}/{expected_rows} Einträge in diesem Lauf)."
                 )
-                _write_log(
-                    "logs/progress.log",
-                    f"{db}: already complete {effective_processed_count}/{expected_rows}",
-                )
                 break
 
             # Der Offset basiert nun nur auf den neu hinzugefügten + übersprungenen Zeilen
@@ -889,10 +1000,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
                 print(
                     "Keine zusätzlichen Einträge verarbeitet; stoppe, um Endlosschleife zu vermeiden."
                 )
-                _write_log(
-                    "logs/progress.log",
-                    f"{db}: no additional records processed this run",
-                )
                 break
 
         wait_for_pending()
@@ -902,10 +1009,6 @@ def automate_gemini(db, start_id=DEFAULT_START_ID, exact_ids=None):
             out_conn.execute(text(f"SELECT COUNT(*) FROM {target_table}")).scalar() or 0
         )
     print(f"Abgeschlossen: {db} ({final_saved_rows} Einträge total im Ziel).")
-    _write_log(
-        "logs/progress.log",
-        f"{db}: finished {final_saved_rows} entries stored",
-    )
 
 
 if __name__ == "__main__":
@@ -936,6 +1039,17 @@ if __name__ == "__main__":
         type=int,
         help="Nur die angegebenen IDs verarbeiten (kann mehrfach angegeben werden).",
     )
+    parser.add_argument(
+        "--multiple-models",
+        dest="multiple_models",
+        action="store_true",
+        help="Nur im API-Modus relevant; GUI ignoriert dieses Flag.",
+    )
+    parser.add_argument(
+        "--out-db",
+        dest="out_db",
+        help="Optional expliziter Pfad für die Ausgabedatenbank.",
+    )
 
     args = parser.parse_args()
     if args.dbs:
@@ -945,6 +1059,12 @@ if __name__ == "__main__":
 
     try:
         for db_name in targets:
-            automate_gemini(db_name, start_id=args.start_id, exact_ids=args.exact_ids)
+            automate_gemini(
+                db_name,
+                start_id=args.start_id,
+                exact_ids=args.exact_ids,
+                output_db_path=args.out_db,
+                multiple_models=args.multiple_models,
+            )
     except KeyboardInterrupt:
         print("\nAbgebrochen durch Benutzer.")
