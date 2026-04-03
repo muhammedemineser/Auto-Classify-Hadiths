@@ -32,8 +32,6 @@ from Tafsir.pipeline.analysis.compare_tafsir_texts import (
 )
 from Tafsir.pipeline.analysis.data_cleaning import (
     duplicated,
-    reconcile_mismatches,
-    reconcile_only_id_null,
 )
 
 REQUIRED_ENV_KEYS = ["GEMINI_API_KEY_ROLLBACK", "GEMINI_API_KEY_ROLLBACK_CACHE"]
@@ -298,25 +296,8 @@ class TafsirRollbackPipeline:
         for rid in divergent_ids:
             self.log_anomaly(rid)
 
-        if not divergent_ids:
-            return
-
-        if hasattr(reconcile_mismatches, "reconcile"):
-            unresolved = reconcile_mismatches.reconcile(
-                ann_db, ann_table, only_ids=divergent_ids
-            )
-        else:
-            unresolved = reconcile_mismatches.get_anomalies(ann_db, ann_table)
-        for rid in unresolved:
-            self.log_anomaly(rid)
-
     def handle_id_null(self):
         print("-> Prüfe auf ID=NULL...")
-        ann_db = str(self._ann_db_path())
-        ann_table = self._ann_table()
-
-        unresolved_rowids = reconcile_only_id_null.get_anomalies(ann_db, ann_table)
-
         with _sqlite_connect(self._ann_db_path()) as conn:
             remaining = conn.execute(
                 f"SELECT rowid FROM {self._ann_table()} WHERE id IS NULL"
@@ -327,9 +308,9 @@ class TafsirRollbackPipeline:
             print(
                 f"   Kritischer Fehler: {len(rowids)} Zeilen ohne ID (rowid): {rowids}"
             )
-            raise RuntimeError("ID=NULL Rows verbleiben nach reconcile_only_id_null.")
-        if unresolved_rowids:
-            print(f"   Unmatched rows (rowid): {unresolved_rowids}")
+            raise RuntimeError(
+                "ID=NULL rows found. Please repair IDs manually before running rollback_pipeline."
+            )
 
     def run_fine_comparison(self):
         print("-> Starte Feinarbeit (klassifizierte Deltas)...")

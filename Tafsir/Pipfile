@@ -5,16 +5,17 @@ name = "pypi"
 
 [packages]
 beautifulsoup4 = "*"
+duckdb = "*"
 fastapi = "*"
+google-genai = "*"
 mss = "*"
 numpy = "*"
 pyautogui = "*"
 pyperclip = "*"
+python-dotenv = "*"
 regex = "*"
 sqlalchemy = "*"
 uvicorn = "*"
-duckdb = "*"
-pandas = "*"
 
 [dev-packages]
 pytest = "*"

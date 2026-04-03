@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import List, Tuple
-
-from Tafsir.pipeline.analysis.data_cleaning.reconcile_mismatches import (
-    _derive_paths,
-)
+from typing import List
 
 
 def get_anomalies(db_path: str, table_name: str) -> List[int]:
