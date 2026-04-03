@@ -1,0 +1,21 @@
+logic (evaluate_guard) checks token coverage, n‑gram overlap, and length ratio to keep bad generations out.
+Das muss detaillierter dokumentiert werden. Json format und inhalte.
+
+python -m Tafsir.pipeline.analysis.data_cleaning.reconcile_only_id_null --db <book> fixes NULL IDs by best match.
+Das ist legacy und war für vergangene runs wichtig. muss gelöscht werden aus projekt, abhängigkeiten und md
+
+python -m Tafsir.pipeline.analysis.data_cleaning.backfill_normalized <book> populates missing extracted_text_normalized,
+python -m Tafsir.pipeline.analysis.data_cleaning.rebuild_derived_columns --db <book> re-extracts tag columns from XML,
+python -m Tafsir.pipeline.analysis.compare_len_src_ann computes minimal length deltas and flags odd pairs,
+Mismatched lengths or wrong IDs: run reconcile_mismatches and inspect compare_len_src_ann output.
+Das ist legacy und war für vergangene runs wichtig. muss gelöscht werden aus projekt, abhängigkeiten und md (?) überprüfe.
+
+logs/guard.log and logs/progress.log capture guard decisions and Gemini interactions; check them first when something looks off.
+Guard skips: look at logs/guard.log; adjust thresholds in evaluate_guard if needed.
+Das neue format ist json
+
+Useful commands/*
+muss aktualisiert werden wenn die vorher erwähnten dinge geklärt sind
+
+a .venv is already used in this workspace
+das wurde aufgehoben. stattdessen soll jeder sein venv erstellen und eine (neue) requirements.txt installieren (die du jetzt erstellst auf grundlage der dependencies)

@@ -1,4 +1,4 @@
-.venv/*
+.venv/
 .env
 Tafsir/config/.env
 SWITCH_MODEL.py
