@@ -55,6 +55,7 @@ class Config:
             "pron": 0.2,
             "pron_dem": 0.3,
             "pron_rel": 0.3,
+            "pron_interrog": 0.3,
             "prep": 0.2,
             "conj": 0.2,
             "conj_sub": 0.2,
@@ -63,6 +64,8 @@ class Config:
             "part_neg": 0.25,
             "part_focus": 0.25,
             "part_interrog": 0.25,
+            "part_det": 0.25,
+            "part_fut": 0.25,
             "part_voc": 0.15,
             "abbrev": 0.4,
         }

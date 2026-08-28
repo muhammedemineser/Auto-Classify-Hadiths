@@ -1,3 +1,5 @@
+./cand_duplicates.json
+./ref_duplicates.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

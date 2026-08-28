@@ -1,0 +1,24 @@
+{
+ "params": {
+  "threshold": 0.5,
+  "percentage_factor": 1.0,
+  "frame_weight": 0.0,
+  "f1_boost": 1.2,
+  "bleu_max_order": 2,
+  "f1_beta": 1.9,
+  "short_bonus_trigger": 0.65,
+  "short_bonus_max": 0.3,
+  "rouge_beta": 1.2,
+  "coverage_weight": 0.4,
+  "kern_floor": 0.85
+ },
+ "result": {
+  "tp": 404,
+  "fp": 0,
+  "tn": 11,
+  "fn": 0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "score": 0.9
+ }
+}

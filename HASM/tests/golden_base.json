@@ -1,0 +1,2294 @@
+[
+ {
+  "txt_id": "22",
+  "source": "AbuDaud",
+  "hadith_id": 2437,
+  "label": "accept"
+ },
+ {
+  "txt_id": "37",
+  "source": "Muslim",
+  "hadith_id": 5190,
+  "label": "accept"
+ },
+ {
+  "txt_id": "38",
+  "source": "Bukhari",
+  "hadith_id": 3258,
+  "label": "accept"
+ },
+ {
+  "txt_id": "38",
+  "source": "IbnMaja",
+  "hadith_id": 3556,
+  "label": "accept"
+ },
+ {
+  "txt_id": "39",
+  "source": "IbnMaja",
+  "hadith_id": 3555,
+  "label": "accept"
+ },
+ {
+  "txt_id": "61",
+  "source": "Bukhari",
+  "hadith_id": 2948,
+  "label": "accept"
+ },
+ {
+  "txt_id": "103",
+  "source": "Tirmizi",
+  "hadith_id": 2045,
+  "label": "accept"
+ },
+ {
+  "txt_id": "106",
+  "source": "IbnMaja",
+  "hadith_id": 4074,
+  "label": "accept"
+ },
+ {
+  "txt_id": "122",
+  "source": "Tirmizi",
+  "hadith_id": 2303,
+  "label": "accept"
+ },
+ {
+  "txt_id": "152",
+  "source": "IbnMaja",
+  "hadith_id": 2781,
+  "label": "accept"
+ },
+ {
+  "txt_id": "163",
+  "source": "AbuDaud",
+  "hadith_id": 1069,
+  "label": "accept"
+ },
+ {
+  "txt_id": "183",
+  "source": "AbuDaud",
+  "hadith_id": 5079,
+  "label": "accept"
+ },
+ {
+  "txt_id": "201",
+  "source": "IbnMaja",
+  "hadith_id": 307,
+  "label": "accept"
+ },
+ {
+  "txt_id": "201",
+  "source": "Nesai",
+  "hadith_id": 29,
+  "label": "accept"
+ },
+ {
+  "txt_id": "211",
+  "source": "Bukhari",
+  "hadith_id": 6112,
+  "label": "accept"
+ },
+ {
+  "txt_id": "211",
+  "source": "IbnMaja",
+  "hadith_id": 3786,
+  "label": "accept"
+ },
+ {
+  "txt_id": "220",
+  "source": "Muslim",
+  "hadith_id": 2536,
+  "label": "accept"
+ },
+ {
+  "txt_id": "245",
+  "source": "Bukhari",
+  "hadith_id": 5638,
+  "label": "accept"
+ },
+ {
+  "txt_id": "278",
+  "source": "Tirmizi",
+  "hadith_id": 2828,
+  "label": "accept"
+ },
+ {
+  "txt_id": "284",
+  "source": "Tirmizi",
+  "hadith_id": 1191,
+  "label": "accept"
+ },
+ {
+  "txt_id": "310",
+  "source": "IbnMaja",
+  "hadith_id": 4220,
+  "label": "accept"
+ },
+ {
+  "txt_id": "310",
+  "source": "Tirmizi",
+  "hadith_id": 2466,
+  "label": "accept"
+ },
+ {
+  "txt_id": "320",
+  "source": "Tirmizi",
+  "hadith_id": 2078,
+  "label": "accept"
+ },
+ {
+  "txt_id": "330",
+  "source": "AbuDaud",
+  "hadith_id": 4696,
+  "label": "accept"
+ },
+ {
+  "txt_id": "335",
+  "source": "IbnMaja",
+  "hadith_id": 1002,
+  "label": "accept"
+ },
+ {
+  "txt_id": "336",
+  "source": "Bukhari",
+  "hadith_id": 6076,
+  "label": "accept"
+ },
+ {
+  "txt_id": "336",
+  "source": "Muslim",
+  "hadith_id": 5816,
+  "label": "accept"
+ },
+ {
+  "txt_id": "336",
+  "source": "Tirmizi",
+  "hadith_id": 3012,
+  "label": "accept"
+ },
+ {
+  "txt_id": "359",
+  "source": "AbuDaud",
+  "hadith_id": 3658,
+  "label": "accept"
+ },
+ {
+  "txt_id": "359",
+  "source": "Bukhari",
+  "hadith_id": 5456,
+  "label": "accept"
+ },
+ {
+  "txt_id": "359",
+  "source": "Muslim",
+  "hadith_id": 4958,
+  "label": "accept"
+ },
+ {
+  "txt_id": "359",
+  "source": "Nesai",
+  "hadith_id": 4266,
+  "label": "accept"
+ },
+ {
+  "txt_id": "371",
+  "source": "AbuDaud",
+  "hadith_id": 4848,
+  "label": "accept"
+ },
+ {
+  "txt_id": "381",
+  "source": "Muslim",
+  "hadith_id": 3384,
+  "label": "accept"
+ },
+ {
+  "txt_id": "387",
+  "source": "AbuDaud",
+  "hadith_id": 3597,
+  "label": "accept"
+ },
+ {
+  "txt_id": "390",
+  "source": "Nesai",
+  "hadith_id": 258,
+  "label": "accept"
+ },
+ {
+  "txt_id": "391",
+  "source": "Muslim",
+  "hadith_id": 5229,
+  "label": "accept"
+ },
+ {
+  "txt_id": "398",
+  "source": "Nesai",
+  "hadith_id": 3284,
+  "label": "accept"
+ },
+ {
+  "txt_id": "423",
+  "source": "Tirmizi",
+  "hadith_id": 1300,
+  "label": "accept"
+ },
+ {
+  "txt_id": "429",
+  "source": "IbnMaja",
+  "hadith_id": 3589,
+  "label": "accept"
+ },
+ {
+  "txt_id": "433",
+  "source": "Muslim",
+  "hadith_id": 4730,
+  "label": "accept"
+ },
+ {
+  "txt_id": "468",
+  "source": "AbuDaud",
+  "hadith_id": 1002,
+  "label": "accept"
+ },
+ {
+  "txt_id": "501",
+  "source": "AbuDaud",
+  "hadith_id": 4029,
+  "label": "accept"
+ },
+ {
+  "txt_id": "501",
+  "source": "Nesai",
+  "hadith_id": 4994,
+  "label": "accept"
+ },
+ {
+  "txt_id": "501",
+  "source": "Tirmizi",
+  "hadith_id": 1841,
+  "label": "accept"
+ },
+ {
+  "txt_id": "504",
+  "source": "AbuDaud",
+  "hadith_id": 4764,
+  "label": "accept"
+ },
+ {
+  "txt_id": "504",
+  "source": "Bukhari",
+  "hadith_id": 2419,
+  "label": "accept"
+ },
+ {
+  "txt_id": "504",
+  "source": "Muslim",
+  "hadith_id": 6467,
+  "label": "accept"
+ },
+ {
+  "txt_id": "504",
+  "source": "Tirmizi",
+  "hadith_id": 1470,
+  "label": "accept"
+ },
+ {
+  "txt_id": "525",
+  "source": "AbuDaud",
+  "hadith_id": 5083,
+  "label": "accept"
+ },
+ {
+  "txt_id": "525",
+  "source": "Tirmizi",
+  "hadith_id": 2871,
+  "label": "accept"
+ },
+ {
+  "txt_id": "531",
+  "source": "Muslim",
+  "hadith_id": 5787,
+  "label": "accept"
+ },
+ {
+  "txt_id": "541",
+  "source": "AbuDaud",
+  "hadith_id": 3960,
+  "label": "accept"
+ },
+ {
+  "txt_id": "541",
+  "source": "IbnMaja",
+  "hadith_id": 4232,
+  "label": "accept"
+ },
+ {
+  "txt_id": "563",
+  "source": "Tirmizi",
+  "hadith_id": 1705,
+  "label": "accept"
+ },
+ {
+  "txt_id": "570",
+  "source": "AbuDaud",
+  "hadith_id": 4766,
+  "label": "accept"
+ },
+ {
+  "txt_id": "571",
+  "source": "Tirmizi",
+  "hadith_id": 1952,
+  "label": "accept"
+ },
+ {
+  "txt_id": "596",
+  "source": "AbuDaud",
+  "hadith_id": 1404,
+  "label": "accept"
+ },
+ {
+  "txt_id": "596",
+  "source": "IbnMaja",
+  "hadith_id": 3916,
+  "label": "accept"
+ },
+ {
+  "txt_id": "596",
+  "source": "Tirmizi",
+  "hadith_id": 2006,
+  "label": "accept"
+ },
+ {
+  "txt_id": "605",
+  "source": "AbuDaud",
+  "hadith_id": 1853,
+  "label": "accept"
+ },
+ {
+  "txt_id": "613",
+  "source": "IbnMaja",
+  "hadith_id": 4071,
+  "label": "accept"
+ },
+ {
+  "txt_id": "668",
+  "source": "Bukhari",
+  "hadith_id": 17,
+  "label": "accept"
+ },
+ {
+  "txt_id": "674",
+  "source": "Nesai",
+  "hadith_id": 2579,
+  "label": "accept"
+ },
+ {
+  "txt_id": "683",
+  "source": "Bukhari",
+  "hadith_id": 1872,
+  "label": "accept"
+ },
+ {
+  "txt_id": "684",
+  "source": "Bukhari",
+  "hadith_id": 6043,
+  "label": "accept"
+ },
+ {
+  "txt_id": "684",
+  "source": "IbnMaja",
+  "hadith_id": 4240,
+  "label": "accept"
+ },
+ {
+  "txt_id": "699",
+  "source": "Tirmizi",
+  "hadith_id": 2343,
+  "label": "accept"
+ },
+ {
+  "txt_id": "700",
+  "source": "Bukhari",
+  "hadith_id": 6347,
+  "label": "accept"
+ },
+ {
+  "txt_id": "700",
+  "source": "IbnMaja",
+  "hadith_id": 2376,
+  "label": "accept"
+ },
+ {
+  "txt_id": "704",
+  "source": "Muslim",
+  "hadith_id": 5588,
+  "label": "accept"
+ },
+ {
+  "txt_id": "729",
+  "source": "Bukhari",
+  "hadith_id": 57,
+  "label": "accept"
+ },
+ {
+  "txt_id": "729",
+  "source": "Nesai",
+  "hadith_id": 2562,
+  "label": "accept"
+ },
+ {
+  "txt_id": "730",
+  "source": "AbuDaud",
+  "hadith_id": 1553,
+  "label": "accept"
+ },
+ {
+  "txt_id": "730",
+  "source": "Bukhari",
+  "hadith_id": 2061,
+  "label": "accept"
+ },
+ {
+  "txt_id": "735",
+  "source": "Tirmizi",
+  "hadith_id": 1029,
+  "label": "accept"
+ },
+ {
+  "txt_id": "739",
+  "source": "AbuDaud",
+  "hadith_id": 5032,
+  "label": "accept"
+ },
+ {
+  "txt_id": "757",
+  "source": "Tirmizi",
+  "hadith_id": 3844,
+  "label": "accept"
+ },
+ {
+  "txt_id": "758",
+  "source": "Muslim",
+  "hadith_id": 326,
+  "label": "accept"
+ },
+ {
+  "txt_id": "758",
+  "source": "Tirmizi",
+  "hadith_id": 2317,
+  "label": "accept"
+ },
+ {
+  "txt_id": "760",
+  "source": "IbnMaja",
+  "hadith_id": 3527,
+  "label": "accept"
+ },
+ {
+  "txt_id": "762",
+  "source": "AbuDaud",
+  "hadith_id": 3790,
+  "label": "accept"
+ },
+ {
+  "txt_id": "772",
+  "source": "AbuDaud",
+  "hadith_id": 4180,
+  "label": "accept"
+ },
+ {
+  "txt_id": "774",
+  "source": "Muslim",
+  "hadith_id": 500,
+  "label": "accept"
+ },
+ {
+  "txt_id": "778",
+  "source": "Bukhari",
+  "hadith_id": 6791,
+  "label": "accept"
+ },
+ {
+  "txt_id": "779",
+  "source": "Tirmizi",
+  "hadith_id": 1784,
+  "label": "accept"
+ },
+ {
+  "txt_id": "782",
+  "source": "Bukhari",
+  "hadith_id": 5699,
+  "label": "accept"
+ },
+ {
+  "txt_id": "782",
+  "source": "Muslim",
+  "hadith_id": 5712,
+  "label": "accept"
+ },
+ {
+  "txt_id": "788",
+  "source": "Bukhari",
+  "hadith_id": 5682,
+  "label": "accept"
+ },
+ {
+  "txt_id": "798",
+  "source": "Nesai",
+  "hadith_id": 4587,
+  "label": "accept"
+ },
+ {
+  "txt_id": "800",
+  "source": "Bukhari",
+  "hadith_id": 5242,
+  "label": "accept"
+ },
+ {
+  "txt_id": "805",
+  "source": "Bukhari",
+  "hadith_id": 2930,
+  "label": "accept"
+ },
+ {
+  "txt_id": "805",
+  "source": "Muslim",
+  "hadith_id": 5043,
+  "label": "accept"
+ },
+ {
+  "txt_id": "805",
+  "source": "Nesai",
+  "hadith_id": 4269,
+  "label": "accept"
+ },
+ {
+  "txt_id": "806",
+  "source": "Tirmizi",
+  "hadith_id": 2002,
+  "label": "accept"
+ },
+ {
+  "txt_id": "810",
+  "source": "Tirmizi",
+  "hadith_id": 2319,
+  "label": "accept"
+ },
+ {
+  "txt_id": "830",
+  "source": "IbnMaja",
+  "hadith_id": 2960,
+  "label": "accept"
+ },
+ {
+  "txt_id": "837",
+  "source": "AbuDaud",
+  "hadith_id": 4692,
+  "label": "accept"
+ },
+ {
+  "txt_id": "847",
+  "source": "Muslim",
+  "hadith_id": 6468,
+  "label": "accept"
+ },
+ {
+  "txt_id": "848",
+  "source": "Tirmizi",
+  "hadith_id": 2260,
+  "label": "accept"
+ },
+ {
+  "txt_id": "849",
+  "source": "Bukhari",
+  "hadith_id": 6446,
+  "label": "accept"
+ },
+ {
+  "txt_id": "850",
+  "source": "Tirmizi",
+  "hadith_id": 2823,
+  "label": "accept"
+ },
+ {
+  "txt_id": "865",
+  "source": "IbnMaja",
+  "hadith_id": 206,
+  "label": "accept"
+ },
+ {
+  "txt_id": "865",
+  "source": "Tirmizi",
+  "hadith_id": 2818,
+  "label": "accept"
+ },
+ {
+  "txt_id": "880",
+  "source": "Tirmizi",
+  "hadith_id": 3014,
+  "label": "accept"
+ },
+ {
+  "txt_id": "888",
+  "source": "Tirmizi",
+  "hadith_id": 2441,
+  "label": "accept"
+ },
+ {
+  "txt_id": "898",
+  "source": "IbnMaja",
+  "hadith_id": 2151,
+  "label": "accept"
+ },
+ {
+  "txt_id": "907",
+  "source": "Muslim",
+  "hadith_id": 4742,
+  "label": "accept"
+ },
+ {
+  "txt_id": "911",
+  "source": "Muslim",
+  "hadith_id": 6829,
+  "label": "accept"
+ },
+ {
+  "txt_id": "918",
+  "source": "AbuDaud",
+  "hadith_id": 4773,
+  "label": "accept"
+ },
+ {
+  "txt_id": "918",
+  "source": "IbnMaja",
+  "hadith_id": 4268,
+  "label": "accept"
+ },
+ {
+  "txt_id": "918",
+  "source": "Tirmizi",
+  "hadith_id": 2639,
+  "label": "accept"
+ },
+ {
+  "txt_id": "921",
+  "source": "Bukhari",
+  "hadith_id": 2749,
+  "label": "accept"
+ },
+ {
+  "txt_id": "922",
+  "source": "Tirmizi",
+  "hadith_id": 2663,
+  "label": "accept"
+ },
+ {
+  "txt_id": "924",
+  "source": "Muslim",
+  "hadith_id": 4534,
+  "label": "accept"
+ },
+ {
+  "txt_id": "925",
+  "source": "Tirmizi",
+  "hadith_id": 2025,
+  "label": "accept"
+ },
+ {
+  "txt_id": "929",
+  "source": "IbnMaja",
+  "hadith_id": 4072,
+  "label": "accept"
+ },
+ {
+  "txt_id": "938",
+  "source": "Tirmizi",
+  "hadith_id": 2615,
+  "label": "accept"
+ },
+ {
+  "txt_id": "939",
+  "source": "IbnMaja",
+  "hadith_id": 4087,
+  "label": "accept"
+ },
+ {
+  "txt_id": "946",
+  "source": "Tirmizi",
+  "hadith_id": 2540,
+  "label": "accept"
+ },
+ {
+  "txt_id": "948",
+  "source": "IbnMaja",
+  "hadith_id": 4273,
+  "label": "accept"
+ },
+ {
+  "txt_id": "949",
+  "source": "Tirmizi",
+  "hadith_id": 2592,
+  "label": "accept"
+ },
+ {
+  "txt_id": "955",
+  "source": "Tirmizi",
+  "hadith_id": 3534,
+  "label": "accept"
+ },
+ {
+  "txt_id": "956",
+  "source": "Tirmizi",
+  "hadith_id": 2383,
+  "label": "accept"
+ },
+ {
+  "txt_id": "958",
+  "source": "AbuDaud",
+  "hadith_id": 4168,
+  "label": "accept"
+ },
+ {
+  "txt_id": "959",
+  "source": "AbuDaud",
+  "hadith_id": 4148,
+  "label": "accept"
+ },
+ {
+  "txt_id": "960",
+  "source": "IbnMaja",
+  "hadith_id": 2833,
+  "label": "accept"
+ },
+ {
+  "txt_id": "974",
+  "source": "AbuDaud",
+  "hadith_id": 4112,
+  "label": "accept"
+ },
+ {
+  "txt_id": "992",
+  "source": "AbuDaud",
+  "hadith_id": 4706,
+  "label": "accept"
+ },
+ {
+  "txt_id": "992",
+  "source": "Muslim",
+  "hadith_id": 4465,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1004",
+  "source": "IbnMaja",
+  "hadith_id": 3958,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1025",
+  "source": "Bukhari",
+  "hadith_id": 2670,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1028",
+  "source": "Muslim",
+  "hadith_id": 2262,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1052",
+  "source": "Bukhari",
+  "hadith_id": 4963,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1067",
+  "source": "IbnMaja",
+  "hadith_id": 1970,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1084",
+  "source": "Tirmizi",
+  "hadith_id": 4346,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1090",
+  "source": "Tirmizi",
+  "hadith_id": 2060,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1118",
+  "source": "IbnMaja",
+  "hadith_id": 3364,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1138",
+  "source": "IbnMaja",
+  "hadith_id": 3905,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1145",
+  "source": "Bukhari",
+  "hadith_id": 6151,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1145",
+  "source": "Tirmizi",
+  "hadith_id": 2849,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1150",
+  "source": "Bukhari",
+  "hadith_id": 6151,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1150",
+  "source": "Tirmizi",
+  "hadith_id": 2849,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1154",
+  "source": "Bukhari",
+  "hadith_id": 5618,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1154",
+  "source": "IbnMaja",
+  "hadith_id": 3542,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1181",
+  "source": "Nesai",
+  "hadith_id": 4635,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1184",
+  "source": "AbuDaud",
+  "hadith_id": 3647,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1200",
+  "source": "Nesai",
+  "hadith_id": 2647,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1216",
+  "source": "AbuDaud",
+  "hadith_id": 1966,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1216",
+  "source": "Muslim",
+  "hadith_id": 3429,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1216",
+  "source": "Nesai",
+  "hadith_id": 3278,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1229",
+  "source": "IbnMaja",
+  "hadith_id": 2118,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1231",
+  "source": "Nesai",
+  "hadith_id": 4055,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1273",
+  "source": "IbnMaja",
+  "hadith_id": 4042,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1273",
+  "source": "Muslim",
+  "hadith_id": 385,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1273",
+  "source": "Tirmizi",
+  "hadith_id": 2773,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1302",
+  "source": "Muslim",
+  "hadith_id": 5614,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1392",
+  "source": "IbnMaja",
+  "hadith_id": 1376,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1409",
+  "source": "IbnMaja",
+  "hadith_id": 977,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1427",
+  "source": "IbnMaja",
+  "hadith_id": 139,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1427",
+  "source": "Muslim",
+  "hadith_id": 5593,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1445",
+  "source": "IbnMaja",
+  "hadith_id": 3896,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1445",
+  "source": "Nesai",
+  "hadith_id": 5418,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1487",
+  "source": "IbnMaja",
+  "hadith_id": 3815,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1526",
+  "source": "Bukhari",
+  "hadith_id": 5673,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1541",
+  "source": "Nesai",
+  "hadith_id": 5445,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1608",
+  "source": "Tirmizi",
+  "hadith_id": 2038,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1617",
+  "source": "Bukhari",
+  "hadith_id": 4568,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1651",
+  "source": "Muslim",
+  "hadith_id": 6813,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1651",
+  "source": "Tirmizi",
+  "hadith_id": 1910,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1763",
+  "source": "IbnMaja",
+  "hadith_id": 2319,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1766",
+  "source": "IbnMaja",
+  "hadith_id": 4186,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1807",
+  "source": "Muslim",
+  "hadith_id": 3429,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1807",
+  "source": "Nesai",
+  "hadith_id": 3282,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1827",
+  "source": "Tirmizi",
+  "hadith_id": 4211,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1838",
+  "source": "Nesai",
+  "hadith_id": 3249,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1867",
+  "source": "Bukhari",
+  "hadith_id": 6900,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1934",
+  "source": "Nesai",
+  "hadith_id": 3193,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1947",
+  "source": "AbuDaud",
+  "hadith_id": 4605,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1947",
+  "source": "IbnMaja",
+  "hadith_id": 201,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1947",
+  "source": "Tirmizi",
+  "hadith_id": 3100,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1955",
+  "source": "Bukhari",
+  "hadith_id": 7340,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1960",
+  "source": "Muslim",
+  "hadith_id": 4890,
+  "label": "accept"
+ },
+ {
+  "txt_id": "1998",
+  "source": "Bukhari",
+  "hadith_id": 35,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2031",
+  "source": "Tirmizi",
+  "hadith_id": 731,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2055",
+  "source": "AbuDaud",
+  "hadith_id": 3650,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2055",
+  "source": "Muslim",
+  "hadith_id": 5375,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2064",
+  "source": "AbuDaud",
+  "hadith_id": 4659,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2069",
+  "source": "IbnMaja",
+  "hadith_id": 2094,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2090",
+  "source": "IbnMaja",
+  "hadith_id": 2096,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2100",
+  "source": "AbuDaud",
+  "hadith_id": 18,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2100",
+  "source": "IbnMaja",
+  "hadith_id": 2850,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2100",
+  "source": "Nesai",
+  "hadith_id": 2,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2100",
+  "source": "Tirmizi",
+  "hadith_id": 118,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2104",
+  "source": "AbuDaud",
+  "hadith_id": 3640,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2116",
+  "source": "Muslim",
+  "hadith_id": 805,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2119",
+  "source": "IbnMaja",
+  "hadith_id": 3397,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2120",
+  "source": "AbuDaud",
+  "hadith_id": 2509,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2123",
+  "source": "IbnMaja",
+  "hadith_id": 1767,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2123",
+  "source": "Muslim",
+  "hadith_id": 2748,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2139",
+  "source": "AbuDaud",
+  "hadith_id": 5075,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2139",
+  "source": "Muslim",
+  "hadith_id": 5590,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2201",
+  "source": "IbnMaja",
+  "hadith_id": 171,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2204",
+  "source": "AbuDaud",
+  "hadith_id": 3620,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2240",
+  "source": "Tirmizi",
+  "hadith_id": 3087,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2248",
+  "source": "Nesai",
+  "hadith_id": 1184,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2307",
+  "source": "IbnMaja",
+  "hadith_id": 2633,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2332",
+  "source": "AbuDaud",
+  "hadith_id": 3112,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2345",
+  "source": "Nesai",
+  "hadith_id": 4038,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2347",
+  "source": "Nesai",
+  "hadith_id": 1826,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2371",
+  "source": "IbnMaja",
+  "hadith_id": 4140,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2396",
+  "source": "Nesai",
+  "hadith_id": 5142,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2401",
+  "source": "AbuDaud",
+  "hadith_id": 1590,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2522",
+  "source": "AbuDaud",
+  "hadith_id": 3750,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2523",
+  "source": "Muslim",
+  "hadith_id": 6352,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2532",
+  "source": "IbnMaja",
+  "hadith_id": 995,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2565",
+  "source": "Nesai",
+  "hadith_id": 2271,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2583",
+  "source": "Tirmizi",
+  "hadith_id": 510,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2586",
+  "source": "Bukhari",
+  "hadith_id": 3184,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2586",
+  "source": "Muslim",
+  "hadith_id": 6819,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2618",
+  "source": "Tirmizi",
+  "hadith_id": 904,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2703",
+  "source": "Tirmizi",
+  "hadith_id": 3650,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2721",
+  "source": "Nesai",
+  "hadith_id": 2,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2776",
+  "source": "IbnMaja",
+  "hadith_id": 3723,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2797",
+  "source": "IbnMaja",
+  "hadith_id": 4168,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2797",
+  "source": "Tirmizi",
+  "hadith_id": 2444,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2853",
+  "source": "Nesai",
+  "hadith_id": 1305,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2890",
+  "source": "Tirmizi",
+  "hadith_id": 2286,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2942",
+  "source": "Muslim",
+  "hadith_id": 6715,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2951",
+  "source": "Bukhari",
+  "hadith_id": 2508,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2951",
+  "source": "Muslim",
+  "hadith_id": 5117,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2951",
+  "source": "Nesai",
+  "hadith_id": 5574,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2954",
+  "source": "AbuDaud",
+  "hadith_id": 4721,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2954",
+  "source": "Muslim",
+  "hadith_id": 1525,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2993",
+  "source": "Bukhari",
+  "hadith_id": 4070,
+  "label": "accept"
+ },
+ {
+  "txt_id": "2996",
+  "source": "Tirmizi",
+  "hadith_id": 251,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3010",
+  "source": "AbuDaud",
+  "hadith_id": 3586,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3013",
+  "source": "Bukhari",
+  "hadith_id": 3393,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3015",
+  "source": "Muslim",
+  "hadith_id": 7096,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3023",
+  "source": "Bukhari",
+  "hadith_id": 6410,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3023",
+  "source": "Bukhari",
+  "hadith_id": 6410,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3027",
+  "source": "Nesai",
+  "hadith_id": 5002,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3059",
+  "source": "Muslim",
+  "hadith_id": 5865,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3066",
+  "source": "Nesai",
+  "hadith_id": 4007,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3075",
+  "source": "Bukhari",
+  "hadith_id": 3340,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3075",
+  "source": "Tirmizi",
+  "hadith_id": 3452,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3076",
+  "source": "Muslim",
+  "hadith_id": 5190,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3104",
+  "source": "AbuDaud",
+  "hadith_id": 4927,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3104",
+  "source": "Bukhari",
+  "hadith_id": 4895,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3104",
+  "source": "Tirmizi",
+  "hadith_id": 3653,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3129",
+  "source": "Muslim",
+  "hadith_id": 476,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3141",
+  "source": "Bukhari",
+  "hadith_id": 7170,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3151",
+  "source": "IbnMaja",
+  "hadith_id": 251,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3160",
+  "source": "Muslim",
+  "hadith_id": 1343,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3164",
+  "source": "Nesai",
+  "hadith_id": 1367,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3170",
+  "source": "Tirmizi",
+  "hadith_id": 3967,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3183",
+  "source": "AbuDaud",
+  "hadith_id": 4973,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3183",
+  "source": "Bukhari",
+  "hadith_id": 3243,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3183",
+  "source": "Muslim",
+  "hadith_id": 6802,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3183",
+  "source": "Tirmizi",
+  "hadith_id": 3713,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3195",
+  "source": "Muslim",
+  "hadith_id": 2799,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3195",
+  "source": "Nesai",
+  "hadith_id": 5241,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3198",
+  "source": "Muslim",
+  "hadith_id": 4614,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3214",
+  "source": "Bukhari",
+  "hadith_id": 5469,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3250",
+  "source": "Bukhari",
+  "hadith_id": 4621,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3250",
+  "source": "Bukhari",
+  "hadith_id": 4621,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3261",
+  "source": "Muslim",
+  "hadith_id": 6972,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3265",
+  "source": "Tirmizi",
+  "hadith_id": 2543,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3276",
+  "source": "AbuDaud",
+  "hadith_id": 4481,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3276",
+  "source": "Bukhari",
+  "hadith_id": 7178,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3276",
+  "source": "Muslim",
+  "hadith_id": 6012,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3282",
+  "source": "Bukhari",
+  "hadith_id": 2760,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3299",
+  "source": "Nesai",
+  "hadith_id": 1954,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3301",
+  "source": "Bukhari",
+  "hadith_id": 4140,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3301",
+  "source": "Muslim",
+  "hadith_id": 6301,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3307",
+  "source": "Bukhari",
+  "hadith_id": 6447,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3322",
+  "source": "Muslim",
+  "hadith_id": 566,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3328",
+  "source": "IbnMaja",
+  "hadith_id": 1166,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3358",
+  "source": "IbnMaja",
+  "hadith_id": 3863,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3369",
+  "source": "Bukhari",
+  "hadith_id": 4283,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3395",
+  "source": "Bukhari",
+  "hadith_id": 6440,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3395",
+  "source": "Muslim",
+  "hadith_id": 7059,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3395",
+  "source": "Nesai",
+  "hadith_id": 2102,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3396",
+  "source": "Tirmizi",
+  "hadith_id": 2674,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3406",
+  "source": "Muslim",
+  "hadith_id": 6529,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3412",
+  "source": "Muslim",
+  "hadith_id": 1919,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3418",
+  "source": "Muslim",
+  "hadith_id": 4707,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3418",
+  "source": "Nesai",
+  "hadith_id": 4092,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3423",
+  "source": "Nesai",
+  "hadith_id": 4925,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3455",
+  "source": "IbnMaja",
+  "hadith_id": 556,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3457",
+  "source": "Bukhari",
+  "hadith_id": 2408,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3457",
+  "source": "Muslim",
+  "hadith_id": 2436,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3458",
+  "source": "Tirmizi",
+  "hadith_id": 2417,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3463",
+  "source": "Tirmizi",
+  "hadith_id": 2851,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3470",
+  "source": "Tirmizi",
+  "hadith_id": 2723,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3473",
+  "source": "Bukhari",
+  "hadith_id": 97,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3492",
+  "source": "Bukhari",
+  "hadith_id": 3293,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3495",
+  "source": "Bukhari",
+  "hadith_id": 1422,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3496",
+  "source": "Muslim",
+  "hadith_id": 6158,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3498",
+  "source": "Muslim",
+  "hadith_id": 4796,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3499",
+  "source": "Nesai",
+  "hadith_id": 5397,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3501",
+  "source": "Bukhari",
+  "hadith_id": 2124,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3501",
+  "source": "Muslim",
+  "hadith_id": 3267,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3504",
+  "source": "Bukhari",
+  "hadith_id": 2463,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3504",
+  "source": "Muslim",
+  "hadith_id": 6302,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3512",
+  "source": "Bukhari",
+  "hadith_id": 4566,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3512",
+  "source": "IbnMaja",
+  "hadith_id": 4073,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3512",
+  "source": "Muslim",
+  "hadith_id": 6470,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3515",
+  "source": "Tirmizi",
+  "hadith_id": 1197,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3516",
+  "source": "Muslim",
+  "hadith_id": 2668,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3516",
+  "source": "Nesai",
+  "hadith_id": 2230,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3517",
+  "source": "Muslim",
+  "hadith_id": 3600,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3518",
+  "source": "Muslim",
+  "hadith_id": 4859,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3518",
+  "source": "Nesai",
+  "hadith_id": 3155,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3519",
+  "source": "Bukhari",
+  "hadith_id": 3265,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3520",
+  "source": "Muslim",
+  "hadith_id": 7009,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3522",
+  "source": "Bukhari",
+  "hadith_id": 6967,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3523",
+  "source": "Bukhari",
+  "hadith_id": 3394,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3526",
+  "source": "IbnMaja",
+  "hadith_id": 4361,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3527",
+  "source": "Bukhari",
+  "hadith_id": 2069,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3532",
+  "source": "Muslim",
+  "hadith_id": 1847,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3536",
+  "source": "Bukhari",
+  "hadith_id": 6471,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3541",
+  "source": "Muslim",
+  "hadith_id": 7015,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3544",
+  "source": "Bukhari",
+  "hadith_id": 64,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3545",
+  "source": "Muslim",
+  "hadith_id": 7027,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3550",
+  "source": "Bukhari",
+  "hadith_id": 7302,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3554",
+  "source": "Bukhari",
+  "hadith_id": 7384,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3554",
+  "source": "Nesai",
+  "hadith_id": 1851,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3558",
+  "source": "Bukhari",
+  "hadith_id": 5836,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3577",
+  "source": "Muslim",
+  "hadith_id": 1835,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3577",
+  "source": "Nesai",
+  "hadith_id": 960,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3595",
+  "source": "Tirmizi",
+  "hadith_id": 3023,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3598",
+  "source": "IbnMaja",
+  "hadith_id": 93,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3598",
+  "source": "Tirmizi",
+  "hadith_id": 4044,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3599",
+  "source": "Muslim",
+  "hadith_id": 7064,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3601",
+  "source": "Muslim",
+  "hadith_id": 2317,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3602",
+  "source": "Muslim",
+  "hadith_id": 6737,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3604",
+  "source": "Bukhari",
+  "hadith_id": 1965,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3606",
+  "source": "Bukhari",
+  "hadith_id": 3721,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3606",
+  "source": "Muslim",
+  "hadith_id": 6312,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3606",
+  "source": "Tirmizi",
+  "hadith_id": 4315,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3608",
+  "source": "Bukhari",
+  "hadith_id": 3739,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3610",
+  "source": "Tirmizi",
+  "hadith_id": 3610,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3611",
+  "source": "Bukhari",
+  "hadith_id": 4270,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3612",
+  "source": "Bukhari",
+  "hadith_id": 3610,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3612",
+  "source": "Muslim",
+  "hadith_id": 6083,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3613",
+  "source": "Bukhari",
+  "hadith_id": 7374,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3613",
+  "source": "Nesai",
+  "hadith_id": 410,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3614",
+  "source": "Bukhari",
+  "hadith_id": 6925,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3619",
+  "source": "Muslim",
+  "hadith_id": 2301,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3619",
+  "source": "Tirmizi",
+  "hadith_id": 2330,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3620",
+  "source": "Muslim",
+  "hadith_id": 411,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3621",
+  "source": "IbnMaja",
+  "hadith_id": 2217,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3621",
+  "source": "Muslim",
+  "hadith_id": 309,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3624",
+  "source": "Bukhari",
+  "hadith_id": 6406,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3937",
+  "source": "Bukhari",
+  "hadith_id": 6283,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3937",
+  "source": "Nesai",
+  "hadith_id": 5435,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3943",
+  "source": "Nesai",
+  "hadith_id": 5459,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3952",
+  "source": "Muslim",
+  "hadith_id": 596,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3956",
+  "source": "Muslim",
+  "hadith_id": 424,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3959",
+  "source": "Bukhari",
+  "hadith_id": 44,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3961",
+  "source": "Bukhari",
+  "hadith_id": 3236,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3961",
+  "source": "Muslim",
+  "hadith_id": 578,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3963",
+  "source": "Bukhari",
+  "hadith_id": 1376,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3970",
+  "source": "Bukhari",
+  "hadith_id": 4406,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3974",
+  "source": "Bukhari",
+  "hadith_id": 428,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3979",
+  "source": "Muslim",
+  "hadith_id": 1528,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3979",
+  "source": "Nesai",
+  "hadith_id": 800,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3983",
+  "source": "Bukhari",
+  "hadith_id": 5830,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3983",
+  "source": "Muslim",
+  "hadith_id": 438,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3986",
+  "source": "Muslim",
+  "hadith_id": 2728,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3987",
+  "source": "Bukhari",
+  "hadith_id": 4959,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3991",
+  "source": "IbnMaja",
+  "hadith_id": 3586,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3991",
+  "source": "Tirmizi",
+  "hadith_id": 1535,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3992",
+  "source": "Muslim",
+  "hadith_id": 1870,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3993",
+  "source": "Bukhari",
+  "hadith_id": 4941,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3993",
+  "source": "Muslim",
+  "hadith_id": 6663,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3997",
+  "source": "Bukhari",
+  "hadith_id": 1885,
+  "label": "accept"
+ },
+ {
+  "txt_id": "3999",
+  "source": "Muslim",
+  "hadith_id": 6508,
+  "label": "accept"
+ },
+ {
+  "txt_id": "4004",
+  "source": "IbnMaja",
+  "hadith_id": 3627,
+  "label": "accept"
+ },
+ {
+  "txt_id": "4005",
+  "source": "Muslim",
+  "hadith_id": 6789,
+  "label": "accept"
+ },
+ {
+  "txt_id": "4033",
+  "source": "IbnMaja",
+  "hadith_id": 1403,
+  "label": "accept"
+ }
+]
