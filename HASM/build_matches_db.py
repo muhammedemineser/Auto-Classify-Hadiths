@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -53,17 +54,46 @@ def load_txt_lines(hadith_txt: str) -> list[tuple[str, str, list[str]]]:
     with open(hadith_txt, "r", encoding="utf-8") as f:
         for line in f:
             parts = line.rstrip("\n").split("\t")
-            if len(parts) != 3:
+            if len(parts) < 2:
                 continue
-            tid, text, kutub_raw = parts
-            if not kutub_raw.startswith("KUTUBS="):
-                continue
-            try:
-                kutubs = json.loads(kutub_raw.split("=", 1)[1])
-            except json.JSONDecodeError:
-                continue
+            tid, text = parts[0], parts[1]
+            if len(parts) >= 3 and parts[2].startswith("KUTUBS="):
+                try:
+                    kutubs = json.loads(parts[2].split("=", 1)[1])
+                except json.JSONDecodeError:
+                    kutubs = []
+            else:
+                # keine KUTUBS-Spalte -> alle 6 Kutub-DBs durchsuchen
+                kutubs = list(NAME_TO_FILE.keys())
             lines.append((tid, text, kutubs))
     return lines
+
+
+_LEAD = re.compile(r"^(\d+)\s*[-\u0640]\s*")
+
+
+def load_full_entries(hadith_full_txt: str) -> dict[str, str]:
+    """Lade die vollstaendigen (nicht-extrahierten) Albani-Eintraege.
+
+    Format variabel: 'ID - ...', 'ID- ...', 'ID \u0640 ...', vereinzelt
+    auch ID mitten in der Zeile (Titel voran).
+    """
+    entries: dict[str, str] = {}
+    with open(hadith_full_txt, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            m = _LEAD.match(line)
+            if m:
+                entries[m.group(1)] = line
+                continue
+            for mm in re.finditer(r"(?<!\d)(\d+)\s*[-\u0640]\s*", line):
+                cid = mm.group(1)
+                if cid not in entries and mm.start() > 0:
+                    entries[cid] = line
+                    break
+    return entries
 
 
 def load_db_rows(db_file: str) -> tuple[list, list]:
@@ -93,6 +123,7 @@ def main():
     parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--top-n", type=int, default=40)
     parser.add_argument("--params-json", default=str(BASE_DIR / "tests" / "optimized_params.json"))
+    parser.add_argument("--full-txt", default=str(BASE_DIR / "Data" / "Sahihah" / "sahihah_komplett.txt"))
     args = parser.parse_args()
 
     config.hadith_txt = args.hadith_txt
@@ -100,6 +131,9 @@ def main():
     t_start = time.time()
     txt_lines = load_txt_lines(args.hadith_txt)
     log(f"txt-Zeilen: {len(txt_lines)}")
+
+    full_entries = load_full_entries(args.full_txt)
+    log(f"komplett-Eintraege: {len(full_entries)}")
 
     cand_txt, cand_meta = utils.get_cand_txt()
     log(f"Kandidaten (unique): {len(cand_meta)} ({time.time()-t_start:.0f}s)")
@@ -147,7 +181,7 @@ def main():
 
     conn = sqlite3.connect(args.output)
     cur = conn.cursor()
-    cols = HADITHS_COLUMNS + ["albani", "source", "txt_id", "score"]
+    cols = HADITHS_COLUMNS + ["albani", "source", "txt_id", "score", "source_full"]
     cur.execute(
         "CREATE TABLE IF NOT EXISTS hadiths ("
         + ", ".join(f'"{c}" TEXT' for c in cols)
@@ -225,6 +259,7 @@ def main():
                     NAME_TO_FILE[name],
                     tid,
                     round(float(best_score), 4),
+                    full_entries.get(tid, ""),
                 ]
                 cur.execute(
                     "INSERT INTO hadiths ("
